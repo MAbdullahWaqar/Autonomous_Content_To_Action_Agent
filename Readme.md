@@ -1,4 +1,4 @@
-# 🧠 Autonomous Content-To-Action Agent
+#  Autonomous Content-To-Action Agent
 
 > An Agentic AI system that transforms unstructured content into actionable outcomes — built with Google Antigravity.
 
