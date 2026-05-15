@@ -13,11 +13,19 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS } from '@/lib/theme';
+import type { PipelineContentSource } from '@/lib/api';
+
+const PIPELINE_INPUT_KEY = '@cta/pipeline_input';
+
+type SourceMode = 'text' | 'url' | 'pdf';
 
 // ── Inline sample data (no API call needed for samples) ─────
 const SAMPLES = [
@@ -52,18 +60,84 @@ const SAMPLES = [
 ];
 
 export default function HomeScreen() {
-  const [content, setContent] = useState('');
+  const [sourceMode, setSourceMode] = useState<SourceMode>('text');
+  const [bodyText, setBodyText] = useState('');
+  const [pdfBase64, setPdfBase64] = useState<string | null>(null);
+  const [pdfFileName, setPdfFileName] = useState<string | null>(null);
 
-  const handleAnalyze = () => {
-    if (!content.trim() || content.trim().length < 10) {
-      Alert.alert('Content Required', 'Please enter at least 10 characters of content to analyze.');
+  const canRun =
+    sourceMode === 'text'
+      ? bodyText.trim().length >= 10
+      : sourceMode === 'url'
+        ? /^https?:\/\//i.test(bodyText.trim())
+        : !!pdfBase64;
+
+  const handleAnalyze = async () => {
+    if (!canRun) {
+      if (sourceMode === 'text') {
+        Alert.alert('Content Required', 'Please enter at least 10 characters.');
+      } else if (sourceMode === 'url') {
+        Alert.alert('URL Required', 'Enter a full URL starting with http:// or https://');
+      } else {
+        Alert.alert('PDF Required', 'Pick a PDF file first.');
+      }
       return;
     }
-    router.push({ pathname: '/pipeline', params: { content: content.trim() } });
+    if (sourceMode === 'pdf' && pdfBase64 && pdfBase64.length > 7_000_000) {
+      Alert.alert('PDF Too Large', 'Please use a PDF under ~5MB for reliable mobile upload.');
+      return;
+    }
+    let content: string;
+    let source: PipelineContentSource;
+    if (sourceMode === 'text') {
+      content = bodyText.trim();
+      source = 'text';
+    } else if (sourceMode === 'url') {
+      content = bodyText.trim();
+      source = 'url';
+    } else {
+      content = pdfBase64 as string;
+      source = 'pdf_base64';
+    }
+    try {
+      await AsyncStorage.setItem(PIPELINE_INPUT_KEY, JSON.stringify({ content, source }));
+      router.push('/pipeline');
+    } catch {
+      Alert.alert('Storage Error', 'Could not stage input. Try a smaller PDF or shorter text.');
+    }
   };
 
   const handleSampleSelect = (sample: typeof SAMPLES[0]) => {
-    setContent(sample.content);
+    setSourceMode('text');
+    setPdfBase64(null);
+    setPdfFileName(null);
+    setBodyText(sample.content);
+  };
+
+  const pickPdf = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const asset = res.assets[0];
+      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      setPdfBase64(b64);
+      setPdfFileName(asset.name || 'document.pdf');
+    } catch (e) {
+      Alert.alert('PDF', e instanceof Error ? e.message : 'Could not read PDF');
+    }
+  };
+
+  const setMode = (m: SourceMode) => {
+    setSourceMode(m);
+    if (m !== 'pdf') {
+      setPdfBase64(null);
+      setPdfFileName(null);
+    }
   };
 
   return (
@@ -86,35 +160,66 @@ export default function HomeScreen() {
         <View style={styles.inputSection}>
           <Text style={styles.sectionTitle}>📥 Input Content</Text>
           <Text style={styles.sectionSubtitle}>
-            Paste a news article, report, or any unstructured text
+            Text, public HTTPS URL, or PDF — normalized server-side before the Antigravity Manager runs.
           </Text>
 
-          <View style={styles.textAreaContainer}>
-            <TextInput
-              style={styles.textArea}
-              placeholder="Paste your content here...\n\nExamples: news articles, business reports, policy updates, dashboard data, sales reports..."
-              placeholderTextColor={COLORS.textMuted}
-              value={content}
-              onChangeText={setContent}
-              multiline
-              numberOfLines={8}
-              textAlignVertical="top"
-            />
-            <View style={styles.charCount}>
-              <Text style={styles.charCountText}>
-                {content.length} characters
-              </Text>
-            </View>
+          <View style={styles.modeRow}>
+            {(['text', 'url', 'pdf'] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.modeChip, sourceMode === m && styles.modeChipOn]}
+                onPress={() => setMode(m)}
+              >
+                <Text style={[styles.modeChipText, sourceMode === m && styles.modeChipTextOn]}>
+                  {m === 'text' ? 'Text' : m === 'url' ? 'URL' : 'PDF'}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
-          {/* ── Analyze Button ────────────────────────────── */}
+          {sourceMode !== 'pdf' ? (
+            <View style={styles.textAreaContainer}>
+              <TextInput
+                style={styles.textArea}
+                placeholder={
+                  sourceMode === 'url'
+                    ? 'https://example.com/news/article…'
+                    : 'Paste your content here…'
+                }
+                placeholderTextColor={COLORS.textMuted}
+                value={bodyText}
+                onChangeText={setBodyText}
+                multiline
+                numberOfLines={sourceMode === 'url' ? 3 : 8}
+                textAlignVertical="top"
+                autoCapitalize={sourceMode === 'url' ? 'none' : 'sentences'}
+                keyboardType={sourceMode === 'url' ? 'url' : 'default'}
+              />
+              <View style={styles.charCount}>
+                <Text style={styles.charCountText}>
+                  {bodyText.length} characters
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.pdfBox}>
+              <TouchableOpacity style={styles.pdfPickBtn} onPress={pickPdf} activeOpacity={0.85}>
+                <Ionicons name="document-attach" size={22} color="#fff" />
+                <Text style={styles.pdfPickText}>Pick PDF</Text>
+              </TouchableOpacity>
+              <Text style={styles.pdfHint}>
+                {pdfFileName ? `Loaded: ${pdfFileName}` : 'Text is extracted on the server (text-based PDFs work best).'}
+              </Text>
+            </View>
+          )}
+
           <TouchableOpacity
             onPress={handleAnalyze}
             activeOpacity={0.8}
-            disabled={content.trim().length < 10}
+            disabled={!canRun}
           >
             <LinearGradient
-              colors={content.trim().length >= 10
+              colors={canRun
                 ? ['#6366f1', '#8b5cf6', '#a78bfa']
                 : ['#333355', '#333355']
               }
@@ -140,7 +245,7 @@ export default function HomeScreen() {
               key={sample.id}
               style={[
                 styles.sampleCard,
-                content === sample.content && styles.sampleCardActive,
+                sourceMode === 'text' && bodyText === sample.content && styles.sampleCardActive,
               ]}
               onPress={() => handleSampleSelect(sample)}
               activeOpacity={0.7}
@@ -151,7 +256,7 @@ export default function HomeScreen() {
                   <Text style={styles.sampleTitle}>{sample.title}</Text>
                   <Text style={styles.sampleDomain}>{sample.domain}</Text>
                 </View>
-                {content === sample.content && (
+                {sourceMode === 'text' && bodyText === sample.content && (
                   <Ionicons name="checkmark-circle" size={22} color={COLORS.success} />
                 )}
               </View>
@@ -167,12 +272,13 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>⚡ How It Works</Text>
           <View style={styles.stepsContainer}>
             {[
+              { num: '0', title: 'Antigravity Manager', desc: 'Mission, work plan, tool strategy' },
               { num: '1', title: 'Content Understanding', desc: 'Domain, entities, changes' },
               { num: '2', title: 'Insight Extraction', desc: 'Non-obvious, quantified insights' },
               { num: '3', title: 'Impact Analysis', desc: 'Stakeholder consequences' },
               { num: '4', title: 'Action Generation', desc: '3 ranked executable actions' },
-              { num: '5', title: 'Execution Simulation', desc: 'Before/after with logs' },
-              { num: '6', title: 'Outcome Report', desc: 'Full structured report' },
+              { num: '5', title: 'Execution Simulation', desc: 'Before/after + mock tool bridge' },
+              { num: '6', title: 'Outcome Report', desc: 'Executive summary' },
             ].map((step, idx) => (
               <View key={idx} style={styles.stepItem}>
                 <LinearGradient
@@ -279,6 +385,60 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: FONT_SIZES.lg,
     fontWeight: '700',
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  modeChip: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modeChipOn: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.surfaceElevated,
+  },
+  modeChipText: {
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  modeChipTextOn: {
+    color: COLORS.textPrimary,
+  },
+  pdfBox: {
+    backgroundColor: COLORS.surface,
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.xl,
+    marginBottom: SPACING.lg,
+    alignItems: 'center',
+  },
+  pdfPickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.xxl,
+    paddingVertical: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+  },
+  pdfPickText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: FONT_SIZES.md,
+  },
+  pdfHint: {
+    marginTop: SPACING.md,
+    fontSize: FONT_SIZES.sm,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
   },
   samplesSection: {
     marginBottom: SPACING.xxxl,

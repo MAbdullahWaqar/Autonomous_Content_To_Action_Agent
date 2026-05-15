@@ -64,6 +64,7 @@ export default function ReportScreen() {
   const handleShare = async () => {
     try {
       const json = JSON.stringify({
+        antigravity: result!.antigravity,
         insight: { domain: result!.content_understanding.domain, key_facts: result!.insight.key_facts, main_insight: result!.insight.main_insight, signals: result!.insight.signals, urgency: result!.insight.urgency },
         impact: { implications: result!.impact.implications, severity: result!.impact.severity, affected_stakeholders: result!.impact.affected_stakeholders, estimated_impact: result!.impact.estimated_impact, consequence_if_ignored: result!.impact.consequence_if_ignored },
         actions: result!.actions,
@@ -93,6 +94,32 @@ export default function ReportScreen() {
         <Section title="📥 INPUT RECEIVED">
           <Text style={s.bodyText}>{r.report.input_summary}</Text>
         </Section>
+
+        {/* Antigravity envelope */}
+        {r.antigravity && (
+          <Section title="🛰️ GOOGLE ANTIGRAVITY (RUNTIME)">
+            <Text style={s.bodyText}>
+              {r.antigravity.platform}. Ingestion: {r.antigravity.ingestion.source_type}
+              {r.antigravity.ingestion.source_uri ? ` — ${r.antigravity.ingestion.source_uri}` : ''}.
+            </Text>
+            <Text style={s.subheading}>Mission</Text>
+            <Text style={s.insightText}>{r.antigravity.work_plan.mission}</Text>
+            <Text style={s.subheading}>Planned tasks (Manager)</Text>
+            {r.antigravity.work_plan.planned_tasks.map((t) => (
+              <Text key={t.task_id} style={s.listItem}>
+                • [{t.manager_surface}] {t.title}
+              </Text>
+            ))}
+            <Text style={s.subheading}>Tool bridge (executed)</Text>
+            {r.antigravity.tool_invocations.map((inv) => (
+              <Text key={inv.step} style={s.listItem}>
+                {inv.step}. {inv.audit_line} ({inv.latency_ms}ms)
+              </Text>
+            ))}
+            <Text style={s.subheading}>Reference</Text>
+            <Text style={s.bodyText}>{r.antigravity.reference_url}</Text>
+          </Section>
+        )}
 
         {/* Insight */}
         <Section title="🔍 INSIGHT SUMMARY">

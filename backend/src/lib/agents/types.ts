@@ -9,6 +9,51 @@ export type TimeSensitivity = 'immediate' | 'this_week' | 'this_quarter' | 'long
 export type AgentStatus = 'waiting' | 'running' | 'done' | 'error';
 export type Priority = 'high' | 'medium' | 'low';
 
+export type PipelineContentSource = 'text' | 'url' | 'pdf_base64';
+
+// ── Ingestion (URL / PDF / text) ────────────────────────────
+export interface ContentIngestionMeta {
+  source_type: PipelineContentSource;
+  source_uri?: string;
+  bytes_received?: number;
+  chars_resolved: number;
+  notes?: string;
+}
+
+// ── Antigravity runtime envelope (Manager + tools + artifacts)
+export interface AntigravityPlannedTask {
+  task_id: string;
+  title: string;
+  manager_surface: 'planning' | 'analysis' | 'reasoning' | 'tools' | 'verification';
+  depends_on: string[];
+  expected_artifact: string;
+}
+
+export interface AntigravityWorkPlan {
+  mission: string;
+  reasoning_chain: string[];
+  planned_tasks: AntigravityPlannedTask[];
+  tool_integration_notes: string;
+}
+
+export interface AntigravityToolInvocation {
+  step: number;
+  tool_used: string;
+  status: 'ok' | 'skipped';
+  latency_ms: number;
+  request_digest: string;
+  response_digest: string;
+  audit_line: string;
+}
+
+export interface AntigravityRuntime {
+  platform: 'Google Antigravity — Manager-orchestrated runtime';
+  reference_url: string;
+  work_plan: AntigravityWorkPlan;
+  tool_invocations: AntigravityToolInvocation[];
+  ingestion: ContentIngestionMeta;
+}
+
 // ── Agent 1: Content Understanding ──────────────────────────
 export interface ContentUnderstandingOutput {
   domain: string;
@@ -99,6 +144,7 @@ export interface PipelineResult {
   id: string;
   timestamp: string;
   input: string;
+  antigravity: AntigravityRuntime;
   content_understanding: ContentUnderstandingOutput;
   insight: InsightOutput;
   impact: ImpactOutput;
@@ -111,6 +157,11 @@ export interface PipelineResult {
 
 // ── SSE Event Types ─────────────────────────────────────────
 export type SSEEventType =
+  | 'ingestion_start'
+  | 'ingestion_complete'
+  | 'workplan_start'
+  | 'workplan_complete'
+  | 'tool_invocation'
   | 'agent_start'
   | 'agent_complete'
   | 'agent_error'

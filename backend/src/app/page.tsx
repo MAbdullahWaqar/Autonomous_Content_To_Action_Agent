@@ -34,7 +34,7 @@ export default function Home() {
         fontFamily: 'monospace',
         fontSize: '0.9rem',
       }}>
-        <p>📡 POST /api/pipeline — Run agent pipeline (SSE)</p>
+        <p>📡 POST /api/pipeline — SSE pipeline. Body JSON: content (string) + source (text | url | pdf_base64)</p>
         <p>📋 GET /api/reports — Fetch saved reports</p>
         <p>📦 GET /api/samples — Get sample content</p>
       </div>

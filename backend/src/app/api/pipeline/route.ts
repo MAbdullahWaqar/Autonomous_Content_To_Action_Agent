@@ -7,7 +7,8 @@ import { NextRequest } from 'next/server';
 import { runPipeline, formatSSE } from '@/lib/agents/pipeline';
 import { verifyAuth, unauthorizedResponse } from '@/lib/auth';
 import { saveReport } from '@/lib/firestore';
-import type { SSEEvent } from '@/lib/agents/types';
+import { resolvePipelineContent } from '@/lib/ingest/resolve-content';
+import type { PipelineContentSource, SSEEvent, ContentIngestionMeta } from '@/lib/agents/types';
 
 export const maxDuration = 120; // Allow up to 2 minutes for full pipeline
 
@@ -30,20 +31,54 @@ export async function POST(request: NextRequest) {
     return unauthorizedResponse();
   }
 
-  // ── Parse request ───────────────────────────────────────
-  let content: string;
+  // ── Parse request: text | URL | PDF (base64) ──────────────
+  let resolvedText: string;
+  let ingestionMeta: ContentIngestionMeta;
   try {
     const body = await request.json();
-    content = body.content;
-    if (!content || typeof content !== 'string' || content.trim().length < 10) {
+    const raw = body.content;
+    const source = (body.source ?? 'text') as PipelineContentSource;
+
+    if (!raw || typeof raw !== 'string') {
       return Response.json(
-        { error: 'Content must be a string with at least 10 characters' },
+        { error: 'Body must include string "content"' },
         { status: 400 }
       );
     }
-  } catch {
+
+    if (source === 'text' && raw.trim().length < 10) {
+      return Response.json(
+        { error: 'Text content must be at least 10 characters' },
+        { status: 400 }
+      );
+    }
+    if (source === 'url' && !/^https?:\/\//i.test(raw.trim())) {
+      return Response.json(
+        { error: 'URL source requires content to be an http(s) URL' },
+        { status: 400 }
+      );
+    }
+    if (source === 'pdf_base64' && raw.trim().length < 200) {
+      return Response.json(
+        { error: 'PDF source requires base64 content (too short)' },
+        { status: 400 }
+      );
+    }
+
+    const resolved = await resolvePipelineContent(raw.trim(), source);
+    resolvedText = resolved.text;
+    ingestionMeta = resolved.meta;
+
+    if (resolvedText.length < 10) {
+      return Response.json(
+        { error: 'Resolved content too short after ingestion' },
+        { status: 400 }
+      );
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Invalid request body';
     return Response.json(
-      { error: 'Invalid JSON body — expected { "content": "..." }' },
+      { error: msg },
       { status: 400 }
     );
   }
@@ -62,7 +97,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const result = await runPipeline(content, emit);
+        const result = await runPipeline(resolvedText, emit, ingestionMeta);
 
         // Save to Firestore
         try {

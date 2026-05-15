@@ -18,6 +18,9 @@ import {
 } from './schemas';
 
 import { AGENT_PROMPTS } from './prompts';
+import { AntigravityWorkPlanSchema } from '../antigravity/schemas';
+import { ANTIGRAVITY_WORKPLAN_PROMPT } from '../antigravity/prompts';
+import { executeAntigravityToolBridge } from '../antigravity/tool-bridge';
 
 import type {
   PipelineResult,
@@ -29,6 +32,9 @@ import type {
   OutcomeReport,
   AgentTraceEntry,
   SSEEvent,
+  ContentIngestionMeta,
+  AntigravityWorkPlan,
+  AntigravityToolInvocation,
 } from './types';
 
 // ── Model Configuration ─────────────────────────────────────
@@ -47,6 +53,9 @@ const AGENT_NAMES = [
   'ExecutionSimulatorAgent',
   'OutcomeReporter',
 ];
+
+const ANTIGRAVITY_REFERENCE_URL =
+  'https://developers.googleblog.com/build-with-google-antigravity-our-new-agentic-development-platform/';
 
 // ── Helper: Create SSE Event ────────────────────────────────
 function createEvent(
@@ -73,11 +82,46 @@ function formatSSE(event: SSEEvent): string {
 // ── Main Pipeline Runner ────────────────────────────────────
 export async function runPipeline(
   content: string,
-  onEvent?: (event: SSEEvent) => void
+  onEvent?: (event: SSEEvent) => void,
+  ingestionMeta?: ContentIngestionMeta
 ): Promise<PipelineResult> {
   const pipelineStart = Date.now();
   const agentTrace: AgentTraceEntry[] = [];
   const emit = (event: SSEEvent) => onEvent?.(event);
+
+  const ingestion: ContentIngestionMeta =
+    ingestionMeta ?? { source_type: 'text', chars_resolved: content.length };
+
+  emit(createEvent('ingestion_complete', undefined, ingestion));
+
+  // ── Antigravity Manager: planning before specialist agents ─
+  emit(createEvent('workplan_start'));
+  let workPlan: AntigravityWorkPlan;
+  try {
+    const planningPayload = {
+      ingestion,
+      content_stats: { length: content.length },
+      content_head: content.slice(0, 14_000),
+      content_tail: content.length > 18_000 ? content.slice(-6_000) : undefined,
+    };
+    const wp = await generateObject({
+      model: getModel(),
+      schema: AntigravityWorkPlanSchema,
+      prompt:
+        ANTIGRAVITY_WORKPLAN_PROMPT +
+        JSON.stringify(planningPayload, null, 2) +
+        '\n\nFULL NORMALIZED TEXT:\n' +
+        content.slice(0, 100_000),
+    });
+    workPlan = wp.object as AntigravityWorkPlan;
+    emit(createEvent('workplan_complete', undefined, workPlan));
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    emit(createEvent('pipeline_error', undefined, undefined, errMsg));
+    throw new Error(`Antigravity Manager (work plan) failed: ${errMsg}`);
+  }
+
+  let toolInvocations: AntigravityToolInvocation[] = [];
 
   // ── Agent 1: Content Understanding ────────────────────────
   emit(createEvent('agent_start', 0));
@@ -262,6 +306,11 @@ export async function runPipeline(
       timestamp: new Date().toISOString(),
     });
     emit(createEvent('agent_complete', 4, simulation));
+
+    toolInvocations = await executeAntigravityToolBridge(simulation);
+    for (const inv of toolInvocations) {
+      emit(createEvent('tool_invocation', undefined, inv));
+    }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     agentTrace.push({
@@ -288,6 +337,8 @@ export async function runPipeline(
       impact,
       actions,
       simulation,
+      antigravity_work_plan: workPlan,
+      antigravity_tool_executions: toolInvocations,
     }, null, 2);
 
     const result = await generateObject({
@@ -321,10 +372,19 @@ export async function runPipeline(
   // ── Assemble Final Result ─────────────────────────────────
   const totalDuration = Date.now() - pipelineStart;
 
+  const antigravity = {
+    platform: 'Google Antigravity — Manager-orchestrated runtime' as const,
+    reference_url: ANTIGRAVITY_REFERENCE_URL,
+    work_plan: workPlan,
+    tool_invocations: toolInvocations,
+    ingestion,
+  };
+
   const pipelineResult: PipelineResult = {
     id: randomUUID(),
     timestamp: new Date().toISOString(),
     input: content,
+    antigravity,
     content_understanding: contentUnderstanding,
     insight,
     impact,

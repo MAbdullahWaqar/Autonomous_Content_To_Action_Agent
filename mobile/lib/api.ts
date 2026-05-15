@@ -35,8 +35,19 @@ export type Urgency = 'low' | 'medium' | 'high' | 'critical';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type Priority = 'high' | 'medium' | 'low';
 
+export type PipelineContentSource = 'text' | 'url' | 'pdf_base64';
+
 export interface SSEEvent {
-  type: 'agent_start' | 'agent_complete' | 'agent_error' | 'pipeline_complete' | 'pipeline_error';
+  type:
+    | 'ingestion_complete'
+    | 'workplan_start'
+    | 'workplan_complete'
+    | 'tool_invocation'
+    | 'agent_start'
+    | 'agent_complete'
+    | 'agent_error'
+    | 'pipeline_complete'
+    | 'pipeline_error';
   agent?: string;
   agentIndex?: number;
   data?: any;
@@ -69,10 +80,46 @@ export interface AgentTraceEntry {
   timestamp: string;
 }
 
+export interface AntigravityWorkPlanClient {
+  mission: string;
+  reasoning_chain: string[];
+  planned_tasks: {
+    task_id: string;
+    title: string;
+    manager_surface: string;
+    depends_on: string[];
+    expected_artifact: string;
+  }[];
+  tool_integration_notes: string;
+}
+
+export interface AntigravityToolInvocationClient {
+  step: number;
+  tool_used: string;
+  status: string;
+  latency_ms: number;
+  request_digest: string;
+  response_digest: string;
+  audit_line: string;
+}
+
 export interface PipelineResult {
   id: string;
   timestamp: string;
   input: string;
+  antigravity?: {
+    platform: string;
+    reference_url: string;
+    work_plan: AntigravityWorkPlanClient;
+    tool_invocations: AntigravityToolInvocationClient[];
+    ingestion: {
+      source_type: PipelineContentSource;
+      source_uri?: string;
+      bytes_received?: number;
+      chars_resolved: number;
+      notes?: string;
+    };
+  };
   content_understanding: {
     domain: string;
     entities: string[];
@@ -144,6 +191,7 @@ export interface SampleContent {
 // ── Run Pipeline (SSE Streaming) ────────────────────────────
 export async function runPipeline(
   content: string,
+  source: PipelineContentSource,
   onEvent: (event: SSEEvent) => void
 ): Promise<PipelineResult> {
   const token = await getAuthToken();
@@ -154,7 +202,7 @@ export async function runPipeline(
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, source }),
   });
 
   if (!response.ok) {
