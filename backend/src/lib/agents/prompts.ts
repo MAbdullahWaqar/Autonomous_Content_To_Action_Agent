@@ -119,8 +119,8 @@ EXECUTION STEPS:
 - All steps should be "success" status
 
 AFTER STATE:
-- Same table structure as before_state
-- Changed values must be visibly different
+- Same column keys as before_state row-by-row (aligned rows)
+- At least TWO numeric or policy fields must change with realistic new values (show the business effect)
 
 NOTIFICATION:
 - Write a REAL, PROFESSIONAL email/SMS that could be sent today
@@ -143,10 +143,20 @@ RULES:
 - insight_summary: The main insight with its magnitude and urgency level
 - impact_summary: Severity + quantified impact + what happens if ignored
 - actions_summary: Brief statement of the 3 actions (one sentence each)
-- simulation_summary: What was executed in simulation and the projected impact
+- simulation_summary: What was executed in simulation and the projected impact. If outcome_evidence.simulation_validation.warnings is non-empty, add one short clause acknowledging the sandbox quality note (do not alarm the reader).
 
 Be concise. Be specific. Include numbers. No fluff.
 
-FULL PIPELINE RESULTS:
+FULL PIPELINE RESULTS (JSON context includes outcome_evidence with diff_highlights, dashboard_kpis, and simulation_validation):
 `,
 };
+
+/** Appended on one automatic retry if validation fails */
+export const SIMULATION_RETRY_SUFFIX = `
+
+━━━ QUALITY GATE (RETRY — OVERRIDES PRIOR ATTEMPT) ━━━
+Your last structured output failed automated validation. Regenerate ONLY the simulation fields with:
+1. before_state and after_state: same row count, IDENTICAL keys per row index, at least 2 concrete cell value changes (use PKR amounts, %, hours, or policy flags as appropriate).
+2. steps: still ≥5, each with a valid tool_used from the allowed list.
+3. Keep action_taken aligned with the TOP_ACTION from context.
+`;

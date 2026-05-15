@@ -17,10 +17,11 @@ import {
   OutcomeReportSchema,
 } from './schemas';
 
-import { AGENT_PROMPTS } from './prompts';
+import { AGENT_PROMPTS, SIMULATION_RETRY_SUFFIX } from './prompts';
 import { AntigravityWorkPlanSchema } from '../antigravity/schemas';
 import { ANTIGRAVITY_WORKPLAN_PROMPT } from '../antigravity/prompts';
 import { executeAntigravityToolBridge } from '../antigravity/tool-bridge';
+import { buildOutcomeEvidence, validateSimulation } from './outcome-evidence';
 
 import type {
   PipelineResult,
@@ -35,6 +36,7 @@ import type {
   ContentIngestionMeta,
   AntigravityWorkPlan,
   AntigravityToolInvocation,
+  OutcomeEvidence,
 } from './types';
 
 // ── Model Configuration ─────────────────────────────────────
@@ -281,28 +283,45 @@ export async function runPipeline(
   emit(createEvent('agent_start', 4));
   const agent5Start = Date.now();
 
-  let simulation: SimulationOutput;
+  let simulation!: SimulationOutput;
+  let outcome_evidence!: OutcomeEvidence;
   try {
-    const context = JSON.stringify({
-      original_content: content,
-      content_understanding: contentUnderstanding,
-      insight,
-      impact,
-      actions,
-    }, null, 2);
+    const baseContext = JSON.stringify(
+      {
+        original_content: content,
+        content_understanding: contentUnderstanding,
+        insight,
+        impact,
+        actions,
+      },
+      null,
+      2
+    );
 
-    const result = await generateObject({
-      model: getModel(),
-      schema: SimulationSchema,
-      prompt: AGENT_PROMPTS.executionSimulator + context,
-    });
-    simulation = result.object;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const promptSuffix = attempt > 1 ? SIMULATION_RETRY_SUFFIX : '';
+      const result = await generateObject({
+        model: getModel(),
+        schema: SimulationSchema,
+        prompt: AGENT_PROMPTS.executionSimulator + baseContext + promptSuffix,
+      });
+      simulation = result.object;
+      const v = validateSimulation(simulation);
+      if (v.before_after_rows_ok && v.steps_count_ok && v.state_changed) {
+        break;
+      }
+    }
+
+    const postVal = validateSimulation(simulation);
     const duration = Date.now() - agent5Start;
+    const qualityNote = postVal.warnings.length
+      ? ` | QA: ${postVal.warnings.join('; ')}`
+      : '';
     agentTrace.push({
       agent: AGENT_NAMES[4],
       status: 'done',
       duration_ms: duration,
-      key_output: `${simulation.steps.length} steps executed | Reach: ${simulation.projected_reach}`,
+      key_output: `${simulation.steps.length} steps | Reach: ${simulation.projected_reach}${qualityNote}`,
       timestamp: new Date().toISOString(),
     });
     emit(createEvent('agent_complete', 4, simulation));
@@ -311,6 +330,8 @@ export async function runPipeline(
     for (const inv of toolInvocations) {
       emit(createEvent('tool_invocation', undefined, inv));
     }
+
+    outcome_evidence = buildOutcomeEvidence(simulation, toolInvocations);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     agentTrace.push({
@@ -337,6 +358,7 @@ export async function runPipeline(
       impact,
       actions,
       simulation,
+      outcome_evidence,
       antigravity_work_plan: workPlan,
       antigravity_tool_executions: toolInvocations,
     }, null, 2);
@@ -390,6 +412,7 @@ export async function runPipeline(
     impact,
     actions,
     simulation,
+    outcome_evidence,
     report,
     agent_trace: agentTrace,
     total_duration_ms: totalDuration,

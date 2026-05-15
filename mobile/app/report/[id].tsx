@@ -65,6 +65,7 @@ export default function ReportScreen() {
     try {
       const json = JSON.stringify({
         antigravity: result!.antigravity,
+        outcome_evidence: result!.outcome_evidence,
         insight: { domain: result!.content_understanding.domain, key_facts: result!.insight.key_facts, main_insight: result!.insight.main_insight, signals: result!.insight.signals, urgency: result!.insight.urgency },
         impact: { implications: result!.impact.implications, severity: result!.impact.severity, affected_stakeholders: result!.impact.affected_stakeholders, estimated_impact: result!.impact.estimated_impact, consequence_if_ignored: result!.impact.consequence_if_ignored },
         actions: result!.actions,
@@ -104,12 +105,18 @@ export default function ReportScreen() {
             </Text>
             <Text style={s.subheading}>Mission</Text>
             <Text style={s.insightText}>{r.antigravity.work_plan.mission}</Text>
+            <Text style={s.subheading}>Reasoning chain (Manager)</Text>
+            {r.antigravity.work_plan.reasoning_chain.map((line, i) => (
+              <Text key={i} style={s.listItem}>{i + 1}. {line}</Text>
+            ))}
             <Text style={s.subheading}>Planned tasks (Manager)</Text>
             {r.antigravity.work_plan.planned_tasks.map((t) => (
               <Text key={t.task_id} style={s.listItem}>
                 • [{t.manager_surface}] {t.title}
               </Text>
             ))}
+            <Text style={s.subheading}>Tool integration (plan)</Text>
+            <Text style={s.bodyText}>{r.antigravity.work_plan.tool_integration_notes}</Text>
             <Text style={s.subheading}>Tool bridge (executed)</Text>
             {r.antigravity.tool_invocations.map((inv) => (
               <Text key={inv.step} style={s.listItem}>
@@ -118,6 +125,42 @@ export default function ReportScreen() {
             ))}
             <Text style={s.subheading}>Reference</Text>
             <Text style={s.bodyText}>{r.antigravity.reference_url}</Text>
+          </Section>
+        )}
+
+        {/* Simulated ops dashboard — deterministic diff / KPI layer */}
+        {r.outcome_evidence && (
+          <Section title="📊 SIMULATED OPS DASHBOARD (SANDBOX)">
+            <Text style={s.bodyText}>
+              Deterministic comparison of before/after rows (not a live ERP). Green flags = automated quality checks passed.
+            </Text>
+            <View style={s.badgeRow}>
+              <Badge label={r.outcome_evidence.simulation_validation.state_changed ? 'STATE CHANGED ✓' : 'STATE WEAK'} color={r.outcome_evidence.simulation_validation.state_changed ? COLORS.success : COLORS.warning} />
+              <Badge label={r.outcome_evidence.simulation_validation.steps_count_ok ? 'STEPS OK ✓' : 'STEPS'} color={r.outcome_evidence.simulation_validation.steps_count_ok ? COLORS.success : COLORS.warning} />
+              <Badge label={r.outcome_evidence.simulation_validation.tools_all_acknowledged ? 'TOOLS OK ✓' : 'TOOLS'} color={r.outcome_evidence.simulation_validation.tools_all_acknowledged ? COLORS.success : COLORS.warning} />
+            </View>
+            {r.outcome_evidence.simulation_validation.warnings.length > 0 && (
+              <>
+                <Text style={s.subheading}>Quality notes</Text>
+                {r.outcome_evidence.simulation_validation.warnings.map((w, i) => (
+                  <Text key={i} style={s.warningText}>• {w}</Text>
+                ))}
+              </>
+            )}
+            <Text style={s.subheading}>KPI snapshots</Text>
+            {r.outcome_evidence.dashboard_kpis.map((k, i) => (
+              <View key={i} style={s.kpiCard}>
+                <Text style={s.kpiMetric}>{k.metric}</Text>
+                <Text style={s.kpiRow}><Text style={s.kpiLab}>Before: </Text>{k.before_snapshot}</Text>
+                <Text style={s.kpiRow}><Text style={s.kpiLab}>After: </Text>{k.after_snapshot}</Text>
+              </View>
+            ))}
+            <Text style={s.subheading}>Field-level changes</Text>
+            {r.outcome_evidence.diff_highlights.length === 0 ? (
+              <Text style={s.bodyText}>No row diff detected (see simulation tables).</Text>
+            ) : (
+              r.outcome_evidence.diff_highlights.map((h, i) => <Text key={i} style={s.listItem}>→ {h}</Text>)
+            )}
           </Section>
         )}
 
@@ -275,4 +318,8 @@ const s = StyleSheet.create({
   totalValue: { fontSize: FONT_SIZES.md, fontWeight: '800', color: COLORS.success },
   errorText: { color: COLORS.error, fontSize: FONT_SIZES.lg, textAlign: 'center', marginTop: 100 },
   linkText: { color: COLORS.primary, fontSize: FONT_SIZES.md, textAlign: 'center', marginTop: SPACING.lg },
+  kpiCard: { backgroundColor: COLORS.surfaceElevated, borderRadius: BORDER_RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.border },
+  kpiMetric: { fontSize: FONT_SIZES.sm, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.xs },
+  kpiRow: { fontSize: FONT_SIZES.xs, color: COLORS.textSecondary, marginBottom: 2 },
+  kpiLab: { fontWeight: '700', color: COLORS.textMuted },
 });

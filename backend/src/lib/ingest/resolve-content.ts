@@ -11,10 +11,14 @@ const MAX_TEXT_CHARS = 120_000;
 const MAX_PDF_BYTES = 5 * 1024 * 1024;
 
 function stripHtmlToText(html: string): string {
-  const $ = cheerio.load(html);
-  $('script, style, noscript, svg, iframe').remove();
-  const text = $('body').text() || $.root().text();
-  return text.replace(/\s+/g, ' ').trim();
+  try {
+    const $ = cheerio.load(html);
+    $('script, style, noscript, svg, iframe').remove();
+    const text = $('body').text() || $.root().text();
+    return text.replace(/\s+/g, ' ').trim();
+  } catch {
+    throw new Error('Could not parse HTML from URL (malformed or binary response)');
+  }
 }
 
 function isProbablyUrl(s: string): boolean {
@@ -49,18 +53,28 @@ export async function resolvePipelineContent(
     if (!isProbablyUrl(url)) {
       throw new Error('URL source requires a valid http(s) URL');
     }
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'CTA-Agent/1.0 (+https://github.com) research/hackathon',
-        Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) {
-      throw new Error(`URL fetch failed: HTTP ${res.status}`);
+    let html: string;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'CTA-Agent/1.0 (+https://github.com) research/hackathon',
+          Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) {
+        throw new Error(`URL fetch failed: HTTP ${res.status}`);
+      }
+      html = await res.text();
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('URL fetch failed: HTTP')) {
+        throw e;
+      }
+      throw new Error(
+        `URL fetch failed: ${e instanceof Error ? e.message : 'network error'}`
+      );
     }
-    const html = await res.text();
     const plain = stripHtmlToText(html).slice(0, MAX_TEXT_CHARS);
     if (plain.length < 10) {
       throw new Error('Could not extract readable text from this URL (empty or non-HTML)');
@@ -85,7 +99,14 @@ export async function resolvePipelineContent(
     throw new Error(`PDF exceeds ${MAX_PDF_BYTES / (1024 * 1024)}MB limit`);
   }
   const pdfParse = (await import('pdf-parse')).default;
-  const parsed = await pdfParse(buf);
+  let parsed: { text?: string; numpages?: number };
+  try {
+    parsed = await pdfParse(buf);
+  } catch (e) {
+    throw new Error(
+      `PDF parse failed: ${e instanceof Error ? e.message : 'unknown error'} (corrupt or image-only PDF?)`
+    );
+  }
   const text = (parsed.text || '').replace(/\s+/g, ' ').trim().slice(0, MAX_TEXT_CHARS);
   if (text.length < 10) {
     throw new Error('Could not extract enough text from PDF (try a text-based PDF)');

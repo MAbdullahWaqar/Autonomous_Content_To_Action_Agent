@@ -156,6 +156,21 @@ export interface PipelineResult {
     time_to_effect: string;
     risk_if_not_executed: string;
   };
+  outcome_evidence?: {
+    diff_highlights: string[];
+    dashboard_kpis: {
+      metric: string;
+      before_snapshot: string;
+      after_snapshot: string;
+    }[];
+    simulation_validation: {
+      before_after_rows_ok: boolean;
+      steps_count_ok: boolean;
+      state_changed: boolean;
+      tools_all_acknowledged: boolean;
+      warnings: string[];
+    };
+  };
   report: {
     input_summary: string;
     insight_summary: string;

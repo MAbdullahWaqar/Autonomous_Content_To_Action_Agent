@@ -117,6 +117,27 @@ export interface SimulationOutput {
   risk_if_not_executed: string;
 }
 
+/** Deterministic KPI / diff layer for judges (sandbox, not live ERP) */
+export interface OutcomeDashboardKpi {
+  metric: string;
+  before_snapshot: string;
+  after_snapshot: string;
+}
+
+export interface SimulationValidation {
+  before_after_rows_ok: boolean;
+  steps_count_ok: boolean;
+  state_changed: boolean;
+  tools_all_acknowledged: boolean;
+  warnings: string[];
+}
+
+export interface OutcomeEvidence {
+  diff_highlights: string[];
+  dashboard_kpis: OutcomeDashboardKpi[];
+  simulation_validation: SimulationValidation;
+}
+
 // ── Agent 6: Outcome Reporter ───────────────────────────────
 export interface AgentTraceEntry {
   agent: string;
@@ -150,6 +171,7 @@ export interface PipelineResult {
   impact: ImpactOutput;
   actions: ActionOutput;
   simulation: SimulationOutput;
+  outcome_evidence: OutcomeEvidence;
   report: OutcomeReport;
   agent_trace: AgentTraceEntry[];
   total_duration_ms: number;
