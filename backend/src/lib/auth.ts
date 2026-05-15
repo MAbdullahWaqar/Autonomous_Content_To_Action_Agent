@@ -2,7 +2,7 @@
 // Auth Middleware — Firebase Token Verification
 // ============================================================
 
-import { adminAuth } from './firebase-admin';
+import { getAdminAuth } from './firebase-admin';
 
 export interface AuthUser {
   uid: string;
@@ -22,7 +22,7 @@ export async function verifyAuth(request: Request): Promise<AuthUser | null> {
   const token = authHeader.slice(7);
 
   try {
-    const decoded = await adminAuth.verifyIdToken(token);
+    const decoded = await getAdminAuth().verifyIdToken(token);
     return {
       uid: decoded.uid,
       email: decoded.email,

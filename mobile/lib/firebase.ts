@@ -9,6 +9,7 @@ import {
   initializeAuth,
   // @ts-expect-error — getReactNativePersistence is exported but not in types
   getReactNativePersistence,
+  type Auth,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
@@ -27,7 +28,7 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 // Initialize Auth with persistence
-let auth;
+let auth: Auth;
 if (Platform.OS === 'web') {
   auth = getAuth(app);
 } else {

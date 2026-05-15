@@ -2,7 +2,7 @@
 // Firestore Operations — Report CRUD
 // ============================================================
 
-import { adminDb } from './firebase-admin';
+import { getAdminDb } from './firebase-admin';
 import type { ReportDocument, PipelineResult } from './agents/types';
 
 const REPORTS_COLLECTION = 'reports';
@@ -25,7 +25,7 @@ export async function saveReport(
     result,
   };
 
-  await adminDb
+  await getAdminDb()
     .collection(REPORTS_COLLECTION)
     .doc(result.id)
     .set(doc);
@@ -38,7 +38,7 @@ export async function getUserReports(
   userId: string,
   limit = 20
 ): Promise<ReportDocument[]> {
-  const snapshot = await adminDb
+  const snapshot = await getAdminDb()
     .collection(REPORTS_COLLECTION)
     .where('userId', '==', userId)
     .orderBy('timestamp', 'desc')
@@ -53,7 +53,7 @@ export async function getReport(
   reportId: string,
   userId: string
 ): Promise<ReportDocument | null> {
-  const doc = await adminDb
+  const doc = await getAdminDb()
     .collection(REPORTS_COLLECTION)
     .doc(reportId)
     .get();
@@ -71,7 +71,7 @@ export async function deleteReport(
   reportId: string,
   userId: string
 ): Promise<boolean> {
-  const doc = await adminDb
+  const doc = await getAdminDb()
     .collection(REPORTS_COLLECTION)
     .doc(reportId)
     .get();
@@ -81,6 +81,6 @@ export async function deleteReport(
   const data = doc.data() as ReportDocument;
   if (data.userId !== userId) return false;
 
-  await adminDb.collection(REPORTS_COLLECTION).doc(reportId).delete();
+  await getAdminDb().collection(REPORTS_COLLECTION).doc(reportId).delete();
   return true;
 }
