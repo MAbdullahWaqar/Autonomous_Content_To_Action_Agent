@@ -35,6 +35,7 @@ export default function Home() {
         fontSize: '0.9rem',
       }}>
         <p>📡 POST /api/pipeline — SSE pipeline. Body JSON: content (string) + source (text | url | pdf_base64)</p>
+        <p>🌐 <a href="/demo" style={{ color: '#93c5fd' }}>Web demo (optional)</a> — same pipeline in browser (Firebase login)</p>
         <p>📋 GET /api/reports — Fetch saved reports</p>
         <p>📦 GET /api/samples — Get sample content</p>
       </div>

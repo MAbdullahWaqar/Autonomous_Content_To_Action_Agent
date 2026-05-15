@@ -44,6 +44,19 @@ export const ActionSchema = z.object({
   top_action: z.string().describe('The most critical action (Rank 1) restated clearly — this is what gets simulated'),
 });
 
+// ── Action Quality Critic (between actions and simulation) ───
+export const ActionCriticSchema = z.object({
+  verdict: z.enum(['approve', 'reject']).describe('approve if actions are specific, tied to insight, and executable; reject if generic or misaligned'),
+  reasoning_chain: z.array(z.string()).min(2).max(6).describe('Short chain: what you checked and why'),
+  problems: z
+    .array(z.string())
+    .max(5)
+    .describe('Concrete defects (empty if approve) — e.g. "Rank 1 lacks owner", "no numbers"'),
+  improvement_instructions: z
+    .string()
+    .describe('If reject: precise instructions to regenerate. If approve: one-line affirmation.'),
+});
+
 // ── Agent 5: Execution Simulator ────────────────────────────
 export const SimulationSchema = z.object({
   action_taken: z.string().describe('The action being simulated'),

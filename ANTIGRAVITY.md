@@ -430,3 +430,13 @@ The result is higher-quality structured output compared to single-layer promptin
 | T+85min | Dependency installation + build verification | Verification |
 | T+90min | Firebase lazy init fix + TS type fix | Debugging |
 | T+95min | Production build verification ✅ | Validation |
+
+---
+
+## 10. Submission proof pack (for judges / video)
+
+1. **Screen record (10–20s):** Antigravity **Manager** view — mission/tasks or workplan artifact.  
+2. **Screen record (3–4 min):** Mobile **or** `/demo` — URL/PDF/text → SSE → **Simulated ops dashboard** (`STATE CHANGED ✓`, **`→` diff lines**) → before/after tables → notification.  
+3. **Narrate once:** “Sandbox mock tools — no production CRM/email.”  
+4. **Attach / link:** `ANTIGRAVITY.md` + sample **`pipeline_complete` JSON** (includes `outcome_evidence`).
+

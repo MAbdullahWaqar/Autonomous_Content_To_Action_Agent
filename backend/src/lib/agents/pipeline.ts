@@ -13,6 +13,7 @@ import {
   InsightSchema,
   ImpactSchema,
   ActionSchema,
+  ActionCriticSchema,
   SimulationSchema,
   OutcomeReportSchema,
 } from './schemas';
@@ -22,6 +23,7 @@ import { AntigravityWorkPlanSchema } from '../antigravity/schemas';
 import { ANTIGRAVITY_WORKPLAN_PROMPT } from '../antigravity/prompts';
 import { executeAntigravityToolBridge } from '../antigravity/tool-bridge';
 import { buildOutcomeEvidence, validateSimulation } from './outcome-evidence';
+import { dispatchActionWebhook } from '../webhooks/dispatch-action-webhook';
 
 import type {
   PipelineResult,
@@ -29,6 +31,8 @@ import type {
   InsightOutput,
   ImpactOutput,
   ActionOutput,
+  ActionCriticOutput,
+  ActionQualitySummary,
   SimulationOutput,
   OutcomeReport,
   AgentTraceEntry,
@@ -37,6 +41,7 @@ import type {
   AntigravityWorkPlan,
   AntigravityToolInvocation,
   OutcomeEvidence,
+  WebhookDispatchResult,
 } from './types';
 
 // ── Model Configuration ─────────────────────────────────────
@@ -88,11 +93,18 @@ export async function runPipeline(
   ingestionMeta?: ContentIngestionMeta
 ): Promise<PipelineResult> {
   const pipelineStart = Date.now();
+  const pipelineId = randomUUID();
   const agentTrace: AgentTraceEntry[] = [];
   const emit = (event: SSEEvent) => onEvent?.(event);
 
-  const ingestion: ContentIngestionMeta =
-    ingestionMeta ?? { source_type: 'text', chars_resolved: content.length };
+  const baseIngestion = ingestionMeta ?? {
+    source_type: 'text' as const,
+    chars_resolved: content.length,
+  };
+  const ingestion: ContentIngestionMeta = {
+    ...baseIngestion,
+    text_preview: baseIngestion.text_preview ?? content.slice(0, 400),
+  };
 
   emit(createEvent('ingestion_complete', undefined, ingestion));
 
@@ -238,31 +250,106 @@ export async function runPipeline(
     throw new Error(`Agent 3 (ImpactAnalyzer) failed: ${errMsg}`);
   }
 
-  // ── Agent 4: Action Generator ─────────────────────────────
+  // ── Agent 4: Action Generator + Action Quality Critic loop ─
   emit(createEvent('agent_start', 3));
   const agent4Start = Date.now();
 
   let actions: ActionOutput;
+  let action_quality!: ActionQualitySummary;
   try {
-    const context = JSON.stringify({
-      original_content: content,
-      content_understanding: contentUnderstanding,
-      insight,
-      impact,
-    }, null, 2);
+    let lastCritique: ActionCriticOutput | null = null;
 
-    const result = await generateObject({
-      model: getModel(),
-      schema: ActionSchema,
-      prompt: AGENT_PROMPTS.actionGenerator + context,
-    });
-    actions = result.object;
+    for (let round = 1; round <= 2; round++) {
+      if (round > 1 && lastCritique) {
+        emit(
+          createEvent('action_regeneration_start', undefined, {
+            round,
+            verdict: lastCritique.verdict,
+            improvement_instructions: lastCritique.improvement_instructions,
+            problems: lastCritique.problems,
+          })
+        );
+      }
+
+      const regenBlock =
+        round > 1 && lastCritique
+          ? `\n\n━━━ REGENERATION (CRITIC REJECTED ROUND ${round - 1}) ━━━\nYou MUST fix these problems:\n${lastCritique.problems.map((p) => `• ${p}`).join('\n')}\n\nMANDATORY INSTRUCTIONS:\n${lastCritique.improvement_instructions}\n`
+          : '';
+
+      const actionContext = JSON.stringify(
+        {
+          original_content: content,
+          content_understanding: contentUnderstanding,
+          insight,
+          impact,
+          regeneration_round: round,
+        },
+        null,
+        2
+      );
+
+      const actionResult = await generateObject({
+        model: getModel(),
+        schema: ActionSchema,
+        prompt: AGENT_PROMPTS.actionGenerator + actionContext + regenBlock,
+      });
+      actions = actionResult.object;
+
+      emit(createEvent('critic_start', undefined, { round }));
+      const criticStart = Date.now();
+      const criticCtx = JSON.stringify(
+        {
+          main_insight: insight.main_insight,
+          urgency: insight.urgency,
+          severity: impact.severity,
+          estimated_impact: impact.estimated_impact,
+          actions,
+          content_excerpt: content.slice(0, 6000),
+        },
+        null,
+        2
+      );
+      const criticResult = await generateObject({
+        model: getModel(),
+        schema: ActionCriticSchema,
+        prompt: AGENT_PROMPTS.actionCritic + criticCtx,
+      });
+      lastCritique = criticResult.object;
+      const criticMs = Date.now() - criticStart;
+      emit(createEvent('critic_complete', undefined, lastCritique));
+
+      agentTrace.push({
+        agent: 'ActionQualityCritic',
+        status: 'done',
+        duration_ms: criticMs,
+        key_output: `${lastCritique.verdict.toUpperCase()} · ${lastCritique.problems.length ? lastCritique.problems[0] : 'OK'}`,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (lastCritique.verdict === 'approve') {
+        action_quality = {
+          rounds_used: round,
+          final_verdict: 'approve',
+          last_critique: lastCritique,
+        };
+        break;
+      }
+      if (round === 2) {
+        action_quality = {
+          rounds_used: 2,
+          final_verdict: 'reject',
+          last_critique: lastCritique,
+        };
+        break;
+      }
+    }
+
     const duration = Date.now() - agent4Start;
     agentTrace.push({
       agent: AGENT_NAMES[3],
       status: 'done',
       duration_ms: duration,
-      key_output: `TOP_ACTION: ${actions.top_action.substring(0, 60)}...`,
+      key_output: `TOP_ACTION: ${actions.top_action.substring(0, 60)}… | critic: ${action_quality.final_verdict}`,
       timestamp: new Date().toISOString(),
     });
     emit(createEvent('agent_complete', 3, actions));
@@ -285,6 +372,7 @@ export async function runPipeline(
 
   let simulation!: SimulationOutput;
   let outcome_evidence!: OutcomeEvidence;
+  let webhook_dispatch!: WebhookDispatchResult;
   try {
     const baseContext = JSON.stringify(
       {
@@ -332,6 +420,42 @@ export async function runPipeline(
     }
 
     outcome_evidence = buildOutcomeEvidence(simulation, toolInvocations);
+
+    const webhookPayload = {
+      pipeline_id: pipelineId,
+      event: 'cta.action_simulation_complete',
+      timestamp: new Date().toISOString(),
+      ingestion: {
+        source_type: ingestion.source_type,
+        source_uri: ingestion.source_uri,
+        text_preview: ingestion.text_preview,
+      },
+      insight_one_liner: insight.main_insight,
+      top_action: actions.top_action,
+      action_quality: {
+        final_verdict: action_quality.final_verdict,
+        rounds_used: action_quality.rounds_used,
+      },
+      simulation: {
+        action_taken: simulation.action_taken,
+        projected_reach: simulation.projected_reach,
+        time_to_effect: simulation.time_to_effect,
+        notification_subject: simulation.notification_subject,
+        steps: simulation.steps.map((s) => ({
+          step: s.step,
+          tool_used: s.tool_used,
+          status: s.status,
+        })),
+      },
+      outcome_evidence: {
+        diff_highlights: outcome_evidence.diff_highlights.slice(0, 12),
+        dashboard_kpis: outcome_evidence.dashboard_kpis.slice(0, 8),
+        simulation_validation: outcome_evidence.simulation_validation,
+      },
+    };
+
+    webhook_dispatch = await dispatchActionWebhook(webhookPayload);
+    emit(createEvent('webhook_dispatch', undefined, webhook_dispatch));
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'Unknown error';
     agentTrace.push({
@@ -357,8 +481,10 @@ export async function runPipeline(
       insight,
       impact,
       actions,
+      action_quality,
       simulation,
       outcome_evidence,
+      outbound_webhook: webhook_dispatch,
       antigravity_work_plan: workPlan,
       antigravity_tool_executions: toolInvocations,
     }, null, 2);
@@ -403,7 +529,7 @@ export async function runPipeline(
   };
 
   const pipelineResult: PipelineResult = {
-    id: randomUUID(),
+    id: pipelineId,
     timestamp: new Date().toISOString(),
     input: content,
     antigravity,
@@ -411,8 +537,10 @@ export async function runPipeline(
     insight,
     impact,
     actions,
+    action_quality,
     simulation,
     outcome_evidence,
+    webhook_dispatch,
     report,
     agent_trace: agentTrace,
     total_duration_ms: totalDuration,

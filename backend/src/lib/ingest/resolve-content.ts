@@ -41,6 +41,7 @@ export async function resolvePipelineContent(
       meta: {
         source_type: 'text',
         chars_resolved: text.length,
+        text_preview: text.slice(0, 400),
         notes: isProbablyUrl(trimmed)
           ? 'Received as text; if this is a URL, choose URL mode for richer extraction.'
           : undefined,
@@ -86,6 +87,7 @@ export async function resolvePipelineContent(
         source_uri: url,
         bytes_received: Buffer.byteLength(html, 'utf8'),
         chars_resolved: plain.length,
+        text_preview: plain.slice(0, 400),
       },
     };
   }
@@ -117,6 +119,7 @@ export async function resolvePipelineContent(
       source_type: 'pdf_base64',
       bytes_received: buf.length,
       chars_resolved: text.length,
+      text_preview: text.slice(0, 400),
       notes: `Extracted ${parsed.numpages ?? '?'} page(s)`,
     },
   };

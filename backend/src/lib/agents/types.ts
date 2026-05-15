@@ -18,6 +18,8 @@ export interface ContentIngestionMeta {
   bytes_received?: number;
   chars_resolved: number;
   notes?: string;
+  /** First ~400 chars of normalized text (for judges / webhooks) */
+  text_preview?: string;
 }
 
 // ── Antigravity runtime envelope (Manager + tools + artifacts)
@@ -95,6 +97,30 @@ export interface ActionOutput {
   top_action: string;
 }
 
+/** 7th reasoning step: critic after action generation */
+export interface ActionCriticOutput {
+  verdict: 'approve' | 'reject';
+  reasoning_chain: string[];
+  problems: string[];
+  improvement_instructions: string;
+}
+
+export interface ActionQualitySummary {
+  rounds_used: number;
+  final_verdict: 'approve' | 'reject';
+  last_critique: ActionCriticOutput;
+}
+
+export interface WebhookDispatchResult {
+  attempted: boolean;
+  skipped_reason?: string;
+  ok?: boolean;
+  http_status?: number;
+  error?: string;
+  dispatched_at?: string;
+  target_host?: string;
+}
+
 // ── Agent 5: Execution Simulator ────────────────────────────
 export interface SimulationStep {
   step: number;
@@ -170,8 +196,10 @@ export interface PipelineResult {
   insight: InsightOutput;
   impact: ImpactOutput;
   actions: ActionOutput;
+  action_quality: ActionQualitySummary;
   simulation: SimulationOutput;
   outcome_evidence: OutcomeEvidence;
+  webhook_dispatch: WebhookDispatchResult;
   report: OutcomeReport;
   agent_trace: AgentTraceEntry[];
   total_duration_ms: number;
@@ -184,6 +212,10 @@ export type SSEEventType =
   | 'workplan_start'
   | 'workplan_complete'
   | 'tool_invocation'
+  | 'critic_start'
+  | 'critic_complete'
+  | 'action_regeneration_start'
+  | 'webhook_dispatch'
   | 'agent_start'
   | 'agent_complete'
   | 'agent_error'

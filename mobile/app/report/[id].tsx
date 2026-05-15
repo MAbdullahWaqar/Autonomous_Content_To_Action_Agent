@@ -64,8 +64,8 @@ export default function ReportScreen() {
   const handleShare = async () => {
     try {
       const json = JSON.stringify({
-        antigravity: result!.antigravity,
-        outcome_evidence: result!.outcome_evidence,
+        ...(result!.antigravity ? { antigravity: result!.antigravity } : {}),
+        ...(result!.outcome_evidence ? { outcome_evidence: result!.outcome_evidence } : {}),
         insight: { domain: result!.content_understanding.domain, key_facts: result!.insight.key_facts, main_insight: result!.insight.main_insight, signals: result!.insight.signals, urgency: result!.insight.urgency },
         impact: { implications: result!.impact.implications, severity: result!.impact.severity, affected_stakeholders: result!.impact.affected_stakeholders, estimated_impact: result!.impact.estimated_impact, consequence_if_ignored: result!.impact.consequence_if_ignored },
         actions: result!.actions,
@@ -204,6 +204,32 @@ export default function ReportScreen() {
           ))}
         </Section>
 
+        {r.action_quality && (
+          <Section title="🧪 ACTION QUALITY CRITIC (SELF-CORRECTION)">
+            <View style={s.badgeRow}>
+              <Badge
+                label={`VERDICT: ${r.action_quality.final_verdict.toUpperCase()}`}
+                color={r.action_quality.final_verdict === 'approve' ? COLORS.success : COLORS.warning}
+              />
+              <Badge label={`ROUNDS: ${r.action_quality.rounds_used}`} color={COLORS.accent} />
+            </View>
+            <Text style={s.subheading}>Critic reasoning</Text>
+            {r.action_quality.last_critique.reasoning_chain.map((line, i) => (
+              <Text key={i} style={s.listItem}>{i + 1}. {line}</Text>
+            ))}
+            {r.action_quality.last_critique.problems.length > 0 && (
+              <>
+                <Text style={s.subheading}>Problems flagged</Text>
+                {r.action_quality.last_critique.problems.map((p, i) => (
+                  <Text key={i} style={s.warningText}>• {p}</Text>
+                ))}
+              </>
+            )}
+            <Text style={s.subheading}>Instructions to generator</Text>
+            <Text style={s.bodyText}>{r.action_quality.last_critique.improvement_instructions}</Text>
+          </Section>
+        )}
+
         {/* Simulation */}
         <Section title="🚀 EXECUTION SIMULATION">
           <Text style={s.simAction}>Simulating: {r.simulation.action_taken}</Text>
@@ -244,6 +270,39 @@ export default function ReportScreen() {
             <View style={s.metricCard}><Text style={[s.metricValue, { color: COLORS.error }]}>{r.simulation.risk_if_not_executed}</Text><Text style={s.metricLabel}>Risk if Ignored</Text></View>
           </View>
         </Section>
+
+        {r.webhook_dispatch && (
+          <Section title="🌐 OUTBOUND WEBHOOK (REAL HTTP)">
+            <Text style={s.bodyText}>
+              After the simulator produced evidence, the backend issued a real POST to your configured endpoint (for example webhook.site) so an external system receives a compact JSON payload of the run.
+            </Text>
+            <View style={s.badgeRow}>
+              <Badge
+                label={r.webhook_dispatch.attempted ? (r.webhook_dispatch.ok ? 'DELIVERED ✓' : 'ATTEMPTED') : 'SKIPPED'}
+                color={r.webhook_dispatch.attempted ? (r.webhook_dispatch.ok ? COLORS.success : COLORS.warning) : COLORS.textMuted}
+              />
+              {r.webhook_dispatch.target_host && (
+                <Badge label={r.webhook_dispatch.target_host} color={COLORS.accent} />
+              )}
+            </View>
+            {!r.webhook_dispatch.attempted && r.webhook_dispatch.skipped_reason && (
+              <Text style={s.bodyText}>{r.webhook_dispatch.skipped_reason}</Text>
+            )}
+            {r.webhook_dispatch.attempted && (
+              <>
+                {r.webhook_dispatch.http_status != null && (
+                  <Text style={s.listItem}>HTTP {r.webhook_dispatch.http_status}</Text>
+                )}
+                {r.webhook_dispatch.dispatched_at && (
+                  <Text style={s.listItem}>Dispatched at {r.webhook_dispatch.dispatched_at}</Text>
+                )}
+                {r.webhook_dispatch.error && (
+                  <Text style={s.warningText}>{r.webhook_dispatch.error}</Text>
+                )}
+              </>
+            )}
+          </Section>
+        )}
 
         {/* Agent Trace */}
         <Section title="🤖 AGENT EXECUTION TRACE">

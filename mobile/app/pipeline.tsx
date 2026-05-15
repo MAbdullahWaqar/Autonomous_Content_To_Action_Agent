@@ -27,7 +27,7 @@ const AGENT_INFO = [
   { name: 'ContentUnderstandingAgent', label: 'Content Understanding', icon: '🔍', desc: 'Analyzing domain, entities, changes' },
   { name: 'InsightExtractorAgent', label: 'Insight Extraction', icon: '💡', desc: 'Finding non-obvious patterns' },
   { name: 'ImpactAnalyzerAgent', label: 'Impact Analysis', icon: '⚠️', desc: 'Mapping consequences' },
-  { name: 'ActionGeneratorAgent', label: 'Action Generation', icon: '🎯', desc: 'Creating executable actions' },
+  { name: 'ActionGeneratorAgent', label: 'Action Generation', icon: '🎯', desc: 'Actions + quality critic loop' },
   { name: 'ExecutionSimulatorAgent', label: 'Execution Simulation', icon: '🚀', desc: 'Simulating top action' },
   { name: 'OutcomeReporter', label: 'Outcome Report', icon: '📊', desc: 'Generating final report' },
 ];
@@ -50,6 +50,8 @@ export default function PipelineScreen() {
   const [workPlan, setWorkPlan] = useState<AntigravityWorkPlanClient | null>(null);
   const [workPlanBusy, setWorkPlanBusy] = useState(false);
   const [toolAuditLines, setToolAuditLines] = useState<string[]>([]);
+  const [lastCriticVerdict, setLastCriticVerdict] = useState<string | null>(null);
+  const [agentActivity, setAgentActivity] = useState<string[]>([]);
 
   const [agents, setAgents] = useState<AgentState[]>(
     AGENT_INFO.map(() => ({ status: 'waiting' }))
@@ -126,6 +128,8 @@ export default function PipelineScreen() {
     if (init !== 'ready' || !payload) return;
 
     setWorkPlanBusy(true);
+    setLastCriticVerdict(null);
+    setAgentActivity([]);
 
     const handleEvent = (event: SSEEvent) => {
       if (event.type === 'workplan_start') {
@@ -139,6 +143,39 @@ export default function PipelineScreen() {
         const row = event.data as { audit_line?: string };
         if (row.audit_line) {
           setToolAuditLines((prev) => [...prev, row.audit_line as string]);
+        }
+      }
+
+      if (event.type === 'critic_complete' && event.data) {
+        const d = event.data as { verdict?: string };
+        if (d.verdict) {
+          setLastCriticVerdict(d.verdict);
+          setAgentActivity((prev) => [...prev, `Critic verdict: ${d.verdict}`]);
+        }
+      }
+      if (event.type === 'action_regeneration_start' && event.data) {
+        const d = event.data as { round?: number };
+        setAgentActivity((prev) => [
+          ...prev,
+          `↻ Regenerating actions (round ${d.round ?? '?'}) — critic rejected prior set`,
+        ]);
+      }
+      if (event.type === 'webhook_dispatch' && event.data) {
+        const w = event.data as {
+          attempted?: boolean;
+          ok?: boolean;
+          skipped_reason?: string;
+          http_status?: number;
+          target_host?: string;
+          error?: string;
+        };
+        if (!w.attempted && w.skipped_reason) {
+          setAgentActivity((prev) => [...prev, `Webhook skipped: ${w.skipped_reason}`]);
+        } else if (w.attempted) {
+          const bit = w.ok
+            ? `OK HTTP ${w.http_status ?? '?'}`
+            : `Failed HTTP ${w.http_status ?? '?'}${w.error ? ` — ${w.error.slice(0, 120)}` : ''}`;
+          setAgentActivity((prev) => [...prev, `Webhook → ${w.target_host ?? '?'}: ${bit}`]);
         }
       }
 
@@ -286,6 +323,15 @@ export default function PipelineScreen() {
           </View>
         )}
 
+        {agentActivity.length > 0 && (
+          <View style={[styles.agentCard, { marginBottom: SPACING.lg }]}>
+            <Text style={styles.agLabel}>Critic loop & real webhook</Text>
+            {agentActivity.map((line, i) => (
+              <Text key={i} style={styles.chainLine}>{line}</Text>
+            ))}
+          </View>
+        )}
+
         {/* ── Pipeline Progress ──────────────────────────── */}
         <View style={styles.pipelineContainer}>
           {AGENT_INFO.map((agent, index) => {
@@ -354,6 +400,14 @@ export default function PipelineScreen() {
                           <Text style={styles.outputLabel}>Top Action:</Text>
                           <Text style={styles.outputValue} numberOfLines={2}>
                             {state.data.top_action}
+                          </Text>
+                        </View>
+                      )}
+                      {index === 3 && lastCriticVerdict && (
+                        <View style={styles.outputRow}>
+                          <Text style={styles.outputLabel}>Critic:</Text>
+                          <Text style={[styles.outputValue, { fontWeight: '700' }]}>
+                            {lastCriticVerdict.toUpperCase()}
                           </Text>
                         </View>
                       )}

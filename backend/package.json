@@ -12,6 +12,7 @@
     "@ai-sdk/google": "^1.2.0",
     "ai": "^4.3.0",
     "cheerio": "^1.0.0",
+    "firebase": "^11.10.0",
     "firebase-admin": "^13.0.0",
     "next": "^15.3.0",
     "pdf-parse": "^1.1.1",

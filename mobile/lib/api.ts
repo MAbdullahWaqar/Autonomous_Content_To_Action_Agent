@@ -43,6 +43,10 @@ export interface SSEEvent {
     | 'workplan_start'
     | 'workplan_complete'
     | 'tool_invocation'
+    | 'critic_start'
+    | 'critic_complete'
+    | 'action_regeneration_start'
+    | 'webhook_dispatch'
     | 'agent_start'
     | 'agent_complete'
     | 'agent_error'
@@ -118,6 +122,7 @@ export interface PipelineResult {
       bytes_received?: number;
       chars_resolved: number;
       notes?: string;
+      text_preview?: string;
     };
   };
   content_understanding: {
@@ -143,6 +148,16 @@ export interface PipelineResult {
   actions: {
     recommended_actions: RecommendedAction[];
     top_action: string;
+  };
+  action_quality?: {
+    rounds_used: number;
+    final_verdict: 'approve' | 'reject';
+    last_critique: {
+      verdict: 'approve' | 'reject';
+      reasoning_chain: string[];
+      problems: string[];
+      improvement_instructions: string;
+    };
   };
   simulation: {
     action_taken: string;
@@ -170,6 +185,15 @@ export interface PipelineResult {
       tools_all_acknowledged: boolean;
       warnings: string[];
     };
+  };
+  webhook_dispatch?: {
+    attempted: boolean;
+    skipped_reason?: string;
+    ok?: boolean;
+    http_status?: number;
+    error?: string;
+    dispatched_at?: string;
+    target_host?: string;
   };
   report: {
     input_summary: string;
