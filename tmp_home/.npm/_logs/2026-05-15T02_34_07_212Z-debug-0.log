@@ -1,0 +1,21 @@
+0 verbose cli /opt/homebrew/Cellar/node/25.9.0_1/bin/node /opt/homebrew/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@11.12.1
+2 info using node@v25.9.0
+3 silly config load:file:/opt/homebrew/lib/node_modules/npm/npmrc
+4 silly config load:file:/Users/muhammadabdullahwaqar/Documents/Projects/CTA/Autonomous_Content_To_Action_Agent/mobile/.npmrc
+5 silly config load:file:/Users/muhammadabdullahwaqar/Documents/Projects/CTA/Autonomous_Content_To_Action_Agent/tmp_home/.npmrc
+6 silly config load:file:/opt/homebrew/etc/npmrc
+7 verbose title npm exec expo start --web
+8 verbose argv "exec" "--" "expo" "start" "--web"
+9 verbose logfile logs-max:10 dir:/Users/muhammadabdullahwaqar/Documents/Projects/CTA/Autonomous_Content_To_Action_Agent/tmp_home/.npm/_logs/2026-05-15T02_34_07_212Z-
+10 verbose logfile /Users/muhammadabdullahwaqar/Documents/Projects/CTA/Autonomous_Content_To_Action_Agent/tmp_home/.npm/_logs/2026-05-15T02_34_07_212Z-debug-0.log
+11 silly logfile done cleaning log files
+12 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with ENOTFOUND
+13 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with ENOTFOUND
+14 http fetch GET https://registry.npmjs.org/npm attempt 3 failed with ENOTFOUND
+15 verbose cwd /Users/muhammadabdullahwaqar/Documents/Projects/CTA/Autonomous_Content_To_Action_Agent/mobile
+16 verbose os Darwin 25.4.0
+17 verbose node v25.9.0
+18 verbose npm  v11.12.1
+19 verbose exit 7
+20 verbose code 7

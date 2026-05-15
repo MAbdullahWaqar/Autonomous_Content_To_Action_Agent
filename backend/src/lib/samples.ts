@@ -1,6 +1,6 @@
 // ============================================================
 // Sample Content for Demo Purposes
-// Pre-loaded examples across different domains
+// Grounded examples across different domains with explicit realism
 // ============================================================
 
 export interface SampleContent {
@@ -13,59 +13,65 @@ export interface SampleContent {
 
 export const SAMPLE_CONTENTS: SampleContent[] = [
   {
-    id: 'logistics-fuel',
-    title: 'Fuel Price Hike',
-    domain: 'Logistics',
-    icon: '🚛',
-    content: `BREAKING: Pakistan's petroleum division has announced a 15% increase in diesel prices effective immediately, raising the per-liter cost from Rs. 290 to Rs. 333.50. This marks the third consecutive monthly increase, bringing the cumulative rise to 28% over the past quarter.
-
-Industry sources report that major logistics operators including TCS, Leopards Courier, and BlueEx are already seeing fuel costs consume 35-40% of their operational budgets, up from 28% six months ago. Last-mile delivery companies operating fleets of 50+ vehicles in Punjab and Sindh are particularly affected.
-
-The All Pakistan Goods Transporters Association has threatened a nationwide strike if prices are not rolled back within 72 hours. Meanwhile, e-commerce platforms Daraz and Foodpanda have reported a 12% increase in delivery complaints related to delays attributed to route optimization changes by logistics partners.
-
-No official government response has been issued regarding potential subsidies for the transport sector.`,
-  },
-  {
-    id: 'finance-rates',
-    title: 'Interest Rate Change',
-    domain: 'Finance',
-    icon: '🏦',
-    content: `The State Bank of Pakistan (SBP) has cut its benchmark interest rate by 200 basis points to 15%, signaling confidence in declining inflation which dropped to 11.8% in the latest reading. This is the fourth consecutive rate cut in 2024-25.
-
-Banking sector analysts at Topline Securities note that SME lending, which had contracted by 18% during the high-rate cycle, is expected to rebound. The Pakistan Microfinance Network reports that 2.3 million active borrowers — predominantly small retailers and agricultural producers in rural Sindh and Southern Punjab — stand to benefit from lower borrowing costs.
-
-However, bank deposit rates are also falling, with major banks offering 12-13% on savings accounts down from 18% six months ago. The Pakistan Stock Exchange KSE-100 index rallied 3.2% on the announcement, with banking stocks leading gains.
-
-Real estate developers in Lahore and Islamabad report a 20% surge in buyer inquiries following the announcement, suggesting capital may flow back into property markets.`,
-  },
-  {
     id: 'supply-chain-port',
-    title: 'Port Congestion Crisis',
+    title: 'Port Qasim Congestion Crisis',
     domain: 'Supply Chain',
     icon: '🚢',
-    content: `Karachi Port Trust (KPT) reports that container dwell time has increased to an average of 12 days, up from the normal 4-5 days, due to a combination of labor disputes and IT system failures in the automated gate system. Approximately 8,500 containers are currently backlogged.
+    content: `INTERNAL SITREP - Port Qasim Operations (May 14, 2026)
 
-The Pakistan International Freight Forwarders Association estimates that importers are facing demurrage charges of Rs. 15,000-25,000 per container per day, with total industry losses approaching Rs. 2.8 billion over the past two weeks.
+CRITICAL: Container dwell time at Port Qasim Terminal 2 has spiked from a 3.2-day average to 14.5 days over the last 96 hours. The backlog is driven by an ongoing strike by the Customs Clearing Agents Association combined with the unexpected breakdown of two primary RTG (Rubber-Tyred Gantry) cranes at East Wharf.
 
-Textile exporters, who account for 60% of Pakistan's exports, report that shipment delays are causing them to miss delivery windows with European buyers, risking contract penalties of 5-8% of order value. Three major European retailers — H&M, Primark, and Next — have issued formal delay notices to their Pakistani suppliers.
+CURRENT IMPACT:
+- 1,240 TEUs of temperature-sensitive pharmaceutical precursors (mostly APIs for local manufacturers like Getz and Searle) are sitting with only 48 hours of backup generator fuel remaining for the reefers.
+- Demurrage charges are accumulating at an estimated $42,000 per day across our client portfolio.
+- Three major export shipments destined for Rotterdam (apparel for Zara and H&M, totaling $4.2M) missed their vessel cut-off times yesterday.
 
-Port Qasim, operating at 85% capacity, has offered to absorb overflow traffic but lacks the specialized equipment for handling refrigerated containers, affecting pharmaceutical and food imports worth an estimated $120M currently in transit.`,
+COMPETITIVE EXPOSURE:
+Our competitor, Maersk Pakistan, has reportedly secured priority berthing at Karachi Port Trust (KPT) and is diverting their priority clients' cargo. We have received 14 escalation emails from Tier 1 accounts in the last 6 hours threatening to cancel Q3 contracts if this is not resolved.
+
+IMMEDIATE REQUIREMENT:
+We need a rerouting plan for incoming vessels to KPT or Gwadar, immediate allocation of emergency fuel for the reefers, and proactive client communications before the news hits the broader market tomorrow morning.`,
   },
   {
-    id: 'sales-decline',
-    title: 'Regional Sales Decline',
-    domain: 'Business Operations',
-    icon: '📉',
-    content: `Q3 regional sales report for FastMart (leading FMCG distributor):
+    id: 'finance-retail',
+    title: 'Lahore Region Retail Default Risk',
+    domain: 'Finance',
+    icon: '🏦',
+    content: `CREDIT RISK ALERT: Q2 2026 Lahore Retail Sector
 
-Lahore Zone: Orders declined by 25% compared to Q2, dropping from Rs. 180M to Rs. 135M. The decline is concentrated in the South Lahore territory where 3 of 5 major distributors have reported cashflow problems. Customer visit frequency by sales team dropped from 4x/month to 2x/month due to vehicle shortages.
+Our automated telemetry indicates a severe liquidity crunch emerging among mid-tier retail distributors in the Lahore South zone. Across our portfolio of 450 SME borrowers in this sector, the 30-day delinquency rate has jumped from 2.1% in March to 8.4% in May.
 
-Karachi Zone: Flat growth (+1.2%) but mix shifting toward lower-margin products. Premium SKU penetration fell from 34% to 22%.
+UNDERLYING CAUSES:
+- A recent 22% hike in commercial electricity tariffs.
+- Slower inventory turnover (days sales of inventory increased from 42 to 68 days) due to inflationary pressure on consumer spending.
+- The recent closure of the Main Boulevard access road for metro construction, severely impacting foot traffic for 85 of our clients.
 
-Islamabad Zone: Strong growth (+18%) driven by new modern trade partnerships with Imtiaz Super Market and Metro Cash & Carry, adding 45 new outlets.
+SPECIFIC EXPOSURE:
+Our total outstanding principal in this specific risk cohort is Rs. 1.25 Billion. The "Fashion & Apparel" sub-segment is showing the highest distress, with 12 accounts already breaching their covenants regarding inventory-to-debt ratios.
 
-Overall: Company-wide gross margin compressed from 24% to 19.5% due to rising input costs not yet passed to consumers. Inventory days increased to 38 (target: 25). Top competitor MegaMart reportedly offering 8% trade discounts to capture share.
-
-HR reports 12% field sales attrition in Lahore, with exit interviews citing compensation below market rate.`,
+If this trend continues for another 30 days without intervention, our predictive models show a potential write-off of Rs. 180M, which would completely wipe out the regional branch's quarterly profit target and trigger a mandatory reserve requirement increase from the central bank. We need a restructuring protocol initiated immediately for the highest-risk accounts.`,
   },
+  {
+    id: 'tech-outage',
+    title: 'AWS us-east-1 Outage Impact',
+    domain: 'Business Operations',
+    icon: '💻',
+    content: `INCIDENT REPORT: AWS us-east-1 Degradation (P1)
+Time: 14:30 PST
+
+STATUS: 
+Amazon Web Services is currently experiencing elevated error rates and latencies in the us-east-1 region, specifically affecting RDS (Relational Database Service) and ElastiCache. 
+
+BUSINESS IMPACT:
+- Our core user authentication service is failing for 65% of login attempts across the APAC region.
+- The payment processing queue is backed up with 4,500 unconfirmed transactions (approximate value $125,000).
+- Our customer support queue has spiked from an average of 40 tickets/hour to 850 tickets/hour in the last 90 minutes. SLA breaches will start occurring in 15 minutes.
+
+SYSTEMS AFFECTED:
+- Auth0 integration (Timeout)
+- Postgres Primary DB (us-east-1a) -> Failing over to Replica (us-east-1b) but replication lag is currently 400 seconds.
+- Redis Cache Clusters (All offline)
+
+We are currently in a "code red" status. If we attempt a hard failover to us-west-2, we risk a data loss window of approximately 5 minutes (the replication lag before the incident). If we wait for AWS resolution, we continue to bleed revenue at a rate of $80,000 per hour. The VP of Engineering requires a decision within the next 10 minutes on whether to execute the cross-region failover protocol.`,
+  }
 ];
