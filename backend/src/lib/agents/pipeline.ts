@@ -254,7 +254,7 @@ export async function runPipeline(
   emit(createEvent('agent_start', 3));
   const agent4Start = Date.now();
 
-  let actions: ActionOutput;
+  let actions!: ActionOutput;
   let action_quality!: ActionQualitySummary;
   try {
     let lastCritique: ActionCriticOutput | null = null;
