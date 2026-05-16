@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateObject, type GenerateObjectResult } from 'ai';
 import type { z } from 'zod';
 
 function isRateLimitError(error: unknown): boolean {
@@ -21,11 +21,11 @@ function sleep(ms: number) {
 }
 
 /** Calls Gemini with backoff when free-tier / quota limits are hit. */
-export async function generateObjectWithRetry<T extends z.ZodType>(options: {
+export async function generateObjectWithRetry<OBJECT>(options: {
   model: ReturnType<typeof import('@ai-sdk/google').google>;
-  schema: T;
+  schema: z.Schema<OBJECT, z.ZodTypeDef, unknown>;
   prompt: string;
-}): Promise<Awaited<ReturnType<typeof generateObject<T>>>> {
+}): Promise<GenerateObjectResult<OBJECT>> {
   const maxAttempts = 4;
 
   let prompt = options.prompt;
