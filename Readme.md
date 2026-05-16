@@ -45,7 +45,7 @@ Organizations receive floods of unstructured information (reports, news, policy,
 5. **Simulate execution** (multi-step narrative with tools, notification draft, projected outcomes).  
 6. **Validate and visualize outcome** via **`outcome_evidence`**: KPI-style snapshots, field-level diff highlights, and QA flags; plus optional **HTTP POST** to a webhook you control (e.g. webhook.site).
 
-The **mobile app** drives the experience: paste text, enter a URL, or pick a PDF; watch **Server-Sent Events (SSE)** as the pipeline runs; open a rich **report**. Successful runs are **persisted to Firestore** (per Firebase user).
+The **mobile app** drives the experience: paste text, enter a URL, pick a PDF, or **upload an image** (chart, screenshot, photo); watch pipeline progress and open a rich **report**. Successful runs are **persisted to Firestore** (per Firebase user). The optional **web demo** (`/demo`) supports the same input modes.
 
 ---
 
@@ -53,7 +53,7 @@ The **mobile app** drives the experience: paste text, enter a URL, or pick a PDF
 
 | Brief requirement | Implementation |
 |-------------------|----------------|
-| **1. Content understanding** (text, PDF, website, etc.) | `source: "text" \| "url" \| "pdf_base64"`; URL fetch + Cheerio HTML→text; `pdf-parse` for PDFs; `ContentUnderstandingAgent` + Zod schema. |
+| **1. Content understanding** (text, PDF, website, **image**, etc.) | `source: "text" \| "url" \| "pdf_base64" \| "image_base64"`; URL fetch + Cheerio HTML→text; `pdf-parse` for PDFs; **Gemini vision** for images → normalized text; `ContentUnderstandingAgent` + Zod schema. |
 | **2. Insight extraction** | `InsightExtractorAgent`; structured `key_facts`, `main_insight`, `signals`, `urgency`. |
 | **3. Impact analysis** | `ImpactAnalyzerAgent`; implications, severity, stakeholders, consequence if ignored. |
 | **4. Action generation** | `ActionGeneratorAgent` + **critic loop** (`ActionQualityCritic`); up to two action rounds. |
@@ -96,7 +96,7 @@ flowchart LR
 Client (Firebase ID token)
   → POST /api/pipeline { content, source }
   → Auth middleware (Firebase Admin)
-  → Ingestion (text / URL / PDF → normalized string + ContentIngestionMeta)
+  → Ingestion (text / URL / PDF / image → normalized string + ContentIngestionMeta)
   → SSE stream opens
   → Work plan (structured “Manager” step)
   → Agents 1–6 + critic loop + simulation + tool bridge + outcome evidence + webhook
@@ -113,13 +113,13 @@ Client (Firebase ID token)
 | **LLM** | Google Gemini via Vercel AI SDK (`@ai-sdk/google`, `generateObject`) |
 | **Schemas** | Zod (`schemas.ts`) |
 | **Backend** | Next.js 15 App Router, TypeScript |
-| **Ingestion** | `fetch` + Cheerio (URL); `pdf-parse` (PDF) |
+| **Ingestion** | `fetch` + Cheerio (URL); `pdf-parse` (PDF); **Gemini vision** (`analyze-image.ts`) for images |
 | **Auth** | Firebase Auth (client) + Firebase Admin (server) |
 | **Persistence** | Cloud Firestore (reports) |
-| **Mobile** | Expo SDK 52, React Native, Expo Router |
-| **Streaming** | SSE (`text/event-stream`) |
+| **Mobile** | Expo SDK 54, React Native, Expo Router, `expo-image-picker` |
+| **Streaming** | SSE on web; **JSON batch mode** (`stream: false`) on native Expo clients |
 
-Default model id in code: **`gemini-1.5-pro`** (see `backend/src/lib/agents/pipeline.ts`).
+Default model id: **`gemini-2.5-flash`** (override with `GEMINI_MODEL` in `backend/.env.local`). Image ingestion uses the same model for vision.
 
 ---
 
@@ -141,7 +141,7 @@ Autonomous_Content_To_Action_Agent/
 │       └── lib/
 │           ├── agents/        ← pipeline.ts, prompts, schemas, types, outcome-evidence
 │           ├── antigravity/   ← work plan schema, prompts, tool-bridge
-│           ├── ingest/        ← resolve-content.ts (URL/PDF/text)
+│           ├── ingest/        ← resolve-content.ts, analyze-image.ts (URL/PDF/text/image)
 │           ├── webhooks/      ← optional ACTION_WEBHOOK_URL dispatch
 │           ├── auth.ts
 │           └── firestore.ts
@@ -149,8 +149,9 @@ Autonomous_Content_To_Action_Agent/
     ├── package.json
     ├── app/                   ← Expo Router screens (tabs, auth, pipeline, report)
     └── lib/
-        ├── api.ts             ← API_BASE_URL, runPipeline SSE client
-        ├── firebase.ts        ← Client Firebase config (must fill in)
+        ├── api.ts             ← API URL, runPipeline (SSE web / JSON mobile)
+        ├── firebase.ts        ← Firebase client (reads `EXPO_PUBLIC_FIREBASE_*` from `.env`)
+        ├── .env.example       ← Copy to `.env` (API URL + Firebase; not committed)
         └── theme.ts
 ```
 
@@ -209,25 +210,38 @@ npm start
 
 ### 4. API route limits
 
-`POST /api/pipeline` uses `maxDuration = 120` seconds (Vercel / compatible hosts)—long runs need an appropriate host configuration.
+`POST /api/pipeline` uses `maxDuration = 300` seconds (Vercel / compatible hosts)—long runs need an appropriate host configuration.
 
 ---
 
 ## Mobile app setup
 
-### 1. Firebase client
+### 1. Environment variables
 
-Edit **`mobile/lib/firebase.ts`**: replace placeholders with your **Web app** config from Firebase Console (compatible with Expo / Firebase JS SDK).
+```bash
+cd mobile
+cp .env.example .env
+```
 
-Enable **Email/Password** sign-in for the same project the backend Admin SDK uses.
+Edit **`mobile/.env`** (gitignored):
 
-### 2. Backend URL
+| Variable | Purpose |
+|----------|---------|
+| `EXPO_PUBLIC_API_URL` | Backend base URL (LAN IP for physical device, e.g. `http://192.168.1.42:3000`) |
+| `EXPO_PUBLIC_FIREBASE_API_KEY` | Firebase web app config |
+| `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN` | |
+| `EXPO_PUBLIC_FIREBASE_PROJECT_ID` | |
+| `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET` | |
+| `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | |
+| `EXPO_PUBLIC_FIREBASE_APP_ID` | |
 
-Edit **`mobile/lib/api.ts`**:
+Values come from **Firebase Console → Project settings → Your apps → Web app**. Enable **Email/Password** sign-in for the same project the backend Admin SDK uses.
 
-- **Android emulator** reaching host machine: often `http://10.0.2.2:3000`  
-- **Physical device** on same Wi‑Fi: your computer’s **LAN IP**, e.g. `http://192.168.1.42:3000` (not `localhost`)  
-- **Production**: your deployed HTTPS API origin  
+### 2. Backend URL notes
+
+- **Android emulator:** often `http://10.0.2.2:3000` (or set `EXPO_PUBLIC_API_URL` explicitly)  
+- **Physical device:** Mac/PC **LAN IP** from `npx expo start` (not `localhost`)  
+- **Production:** your deployed HTTPS API origin  
 
 ### 3. Install and run
 
@@ -242,8 +256,9 @@ Press **`a`** for Android emulator or scan the QR code with **Expo Go** (same ne
 ### 4. App flow (high level)
 
 - **Auth:** login / register (Firebase).  
-- **Analyze (home):** choose **Text**, **URL**, or **PDF**; optional inline samples (fuel, finance, supply chain, sales).  
-- **Pipeline:** stages content in AsyncStorage → navigates to pipeline screen → consumes SSE until `pipeline_complete`.  
+- **Analyze (home):** choose **Text**, **URL**, **PDF**, or **Image**; optional inline samples (fuel, finance, supply chain, sales).  
+- **Image:** pick from the photo library (JPEG/PNG/WebP/GIF, max ~4MB); server runs **Gemini vision** to extract text and visual context before agents run.  
+- **Pipeline:** stages content in AsyncStorage → pipeline screen → **JSON mode** on native (full result + replayed events); web uses SSE.  
 - **Report:** full narrative, Antigravity block, simulated ops dashboard, insight/impact/actions, simulation, critic/webhook sections, agent trace.  
 - **History / settings:** saved reports and configuration surface as implemented in tabs.
 
@@ -254,7 +269,7 @@ Press **`a`** for Android emulator or scan the QR code with **Expo Go** (same ne
 1. Set all **`NEXT_PUBLIC_FIREBASE_*`** variables in **`backend/.env.local`** (same Firebase project as mobile web app).  
 2. `npm run dev` in `backend/`.  
 3. Open **`http://localhost:3000/demo`**.  
-4. Sign in with a Firebase email/password user; run pipeline; SSE lines and final JSON appear in-page.
+4. Sign in with a Firebase email/password user; run pipeline (text, URL, PDF, or **image** upload); SSE lines and final JSON appear in-page.
 
 ---
 
@@ -268,12 +283,15 @@ Press **`a`** for Android emulator or scan the QR code with **Expo Go** (same ne
 ```json
 {
   "content": "<string>",
-  "source": "text | url | pdf_base64"
+  "source": "text | url | pdf_base64 | image_base64",
+  "stream": true
 }
 ```
 
-- **`content`:** raw text, a full `http(s)` URL, or base64-encoded PDF bytes (for `pdf_base64`).  
-- **Response:** **`text/event-stream`** (SSE). Each event is one line: `data: {JSON}\n\n`.
+- **`content`:** raw text, a full `http(s)` URL, base64-encoded PDF bytes (`pdf_base64`), or base64-encoded image bytes (`image_base64`).  
+- **`stream`:** optional; default `true` (SSE). Set `"stream": false` for a single JSON response `{ "result", "events" }` (used by the Expo mobile app).  
+- **`image_base64`:** JPEG, PNG, WebP, or GIF; max **4MB**. Server calls Gemini vision once to produce normalized text, then runs the standard agent chain.  
+- **Response (stream):** **`text/event-stream`** (SSE). Each event is one line: `data: {JSON}\n\n`.
 
 **Final event:** `type: "pipeline_complete"`, `data` = full **`PipelineResult`** (includes `antigravity`, `outcome_evidence`, `action_quality`, `webhook_dispatch`, `agent_trace`, etc.).
 
@@ -312,7 +330,7 @@ Clients should handle at least: `pipeline_error`, `pipeline_complete`, and optio
 
 ## Pipeline stages (runtime)
 
-1. **Ingestion** — Resolve `text` / `url` / `pdf_base64` to a single normalized string; attach metadata.  
+1. **Ingestion** — Resolve `text` / `url` / `pdf_base64` / `image_base64` to a single normalized string; images via **Gemini vision** (OCR, charts, visible context); attach `ContentIngestionMeta`.  
 2. **Antigravity Manager (work plan)** — Gemini emits `AntigravityWorkPlan`: mission, `reasoning_chain`, `planned_tasks`, `tool_integration_notes`.  
 3. **Agent 1 — Content understanding**  
 4. **Agent 2 — Insight extraction**  
@@ -368,16 +386,18 @@ For hackathon judges: combine **ANTIGRAVITY.md** + short **screen recording of A
 | Mobile cannot reach API | `localhost` on device | Use LAN IP or `10.0.2.2` (emulator); run `next dev -H 0.0.0.0` |
 | 401 on pipeline | Missing/invalid Firebase token | Log in again; align Firebase project with backend Admin |
 | URL ingestion fails | Blocked site, non-HTML, timeout | Try a simple public article URL; check backend logs |
-| PDF fails | Image-only or scanned PDF | Use text-based PDF |
+| PDF fails | Image-only or scanned PDF | Use text-based PDF, or **Image** mode for a photo of the page |
+| Image fails | Too large or quota | Keep under 4MB; wait for Gemini rate limit; check vision model in `GEMINI_MODEL` |
 | Webhook skipped | Env not set | Set `ACTION_WEBHOOK_URL` in `backend/.env.local` |
-| Slow or 504 | Long Gemini runs | Normal on cold start; ensure host allows long serverless duration |
+| Gemini 429 / quota | Free-tier limits | Wait 1–2 min; use `gemini-2.5-flash`; see [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits) |
+| Slow or 504 | Long Gemini runs | Normal on cold start; image runs add one vision call before agents |
 
 ---
 
 ## Demo video checklist (3–5 minutes)
 
 1. **Disclaimer:** Sandbox simulation; no production CRM; optional webhook only to your test URL.  
-2. **Input:** Show **three modes** if possible: sample text, **URL**, or **PDF**.  
+2. **Input:** Show **four modes** if possible: sample text, **URL**, **PDF**, or **image** (chart/screenshot).  
 3. **Pipeline UI:** Work plan → agents → critic line / regeneration if shown → tool audit → webhook line.  
 4. **Report:** Before/after tables, steps, **outcome_evidence** badges, one **diff** line, notification draft.  
 5. **Antigravity:** Brief IDE/Manager clip + pointer to **ANTIGRAVITY.md** or same work plan on screen.
@@ -388,7 +408,8 @@ For hackathon judges: combine **ANTIGRAVITY.md** + short **screen recording of A
 
 - **Public HTTP(S) URLs** only for fetch; respect site `robots`/ToS ethically for demos.  
 - **PDF:** best results with text-based PDFs; very large files are capped (see `resolve-content.ts`).  
-- **Dashboards as images** or live BI tools are **not** ingested—use exported PDF/text or a public HTML dashboard URL when applicable.  
+- **Images:** charts, dashboards, screenshots, and document photos work well; analysis is via **vision → text** (not pixel-level BI integration). Max **4MB** per upload.  
+- **Live BI tools** are not connected directly—export a screenshot/chart image or use a public dashboard URL when applicable.  
 - **Model output quality** varies with prompt and input; use curated samples for judging.  
 - **Antigravity IDE** does not automatically receive logs from every end-user app request; **SSE + `agent_trace`** are the canonical runtime logs for the shipped product.
 
