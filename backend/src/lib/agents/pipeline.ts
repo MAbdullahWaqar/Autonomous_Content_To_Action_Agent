@@ -5,8 +5,8 @@
 // ============================================================
 
 import { google } from '@ai-sdk/google';
-import { generateObject } from 'ai';
 import { randomUUID } from 'crypto';
+import { generateObjectWithRetry } from './generate-with-retry';
 
 import {
   ContentUnderstandingSchema,
@@ -45,7 +45,8 @@ import type {
 } from './types';
 
 // ── Model Configuration ─────────────────────────────────────
-const MODEL_ID = 'gemini-1.5-pro';
+// Override in .env.local if needed. Default: 2.5-flash (widely available on AI Studio free tier).
+const MODEL_ID = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
 
 function getModel() {
   return google(MODEL_ID);
@@ -118,7 +119,7 @@ export async function runPipeline(
       content_head: content.slice(0, 14_000),
       content_tail: content.length > 18_000 ? content.slice(-6_000) : undefined,
     };
-    const wp = await generateObject({
+    const wp = await generateObjectWithRetry({
       model: getModel(),
       schema: AntigravityWorkPlanSchema,
       prompt:
@@ -143,7 +144,7 @@ export async function runPipeline(
 
   let contentUnderstanding: ContentUnderstandingOutput;
   try {
-    const result = await generateObject({
+    const result = await generateObjectWithRetry({
       model: getModel(),
       schema: ContentUnderstandingSchema,
       prompt: AGENT_PROMPTS.contentUnderstanding + content,
@@ -182,7 +183,7 @@ export async function runPipeline(
       content_understanding: contentUnderstanding,
     }, null, 2);
 
-    const result = await generateObject({
+    const result = await generateObjectWithRetry({
       model: getModel(),
       schema: InsightSchema,
       prompt: AGENT_PROMPTS.insightExtractor + context,
@@ -222,7 +223,7 @@ export async function runPipeline(
       insight,
     }, null, 2);
 
-    const result = await generateObject({
+    const result = await generateObjectWithRetry({
       model: getModel(),
       schema: ImpactSchema,
       prompt: AGENT_PROMPTS.impactAnalyzer + context,
@@ -288,7 +289,7 @@ export async function runPipeline(
         2
       );
 
-      const actionResult = await generateObject({
+      const actionResult = await generateObjectWithRetry({
         model: getModel(),
         schema: ActionSchema,
         prompt: AGENT_PROMPTS.actionGenerator + actionContext + regenBlock,
@@ -309,7 +310,7 @@ export async function runPipeline(
         null,
         2
       );
-      const criticResult = await generateObject({
+      const criticResult = await generateObjectWithRetry({
         model: getModel(),
         schema: ActionCriticSchema,
         prompt: AGENT_PROMPTS.actionCritic + criticCtx,
@@ -388,7 +389,7 @@ export async function runPipeline(
 
     for (let attempt = 1; attempt <= 2; attempt++) {
       const promptSuffix = attempt > 1 ? SIMULATION_RETRY_SUFFIX : '';
-      const result = await generateObject({
+      const result = await generateObjectWithRetry({
         model: getModel(),
         schema: SimulationSchema,
         prompt: AGENT_PROMPTS.executionSimulator + baseContext + promptSuffix,
@@ -489,7 +490,7 @@ export async function runPipeline(
       antigravity_tool_executions: toolInvocations,
     }, null, 2);
 
-    const result = await generateObject({
+    const result = await generateObjectWithRetry({
       model: getModel(),
       schema: OutcomeReportSchema,
       prompt: AGENT_PROMPTS.outcomeReporter + context,

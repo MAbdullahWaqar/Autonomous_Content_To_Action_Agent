@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@ai-sdk/google": "^1.2.0",
+    "@ai-sdk/google-vertex": "^4.0.128",
     "ai": "^4.3.0",
     "cheerio": "^1.0.0",
     "firebase": "^11.10.0",

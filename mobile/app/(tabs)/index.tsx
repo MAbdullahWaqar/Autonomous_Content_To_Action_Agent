@@ -12,7 +12,9 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -25,7 +27,7 @@ import type { PipelineContentSource } from '@/lib/api';
 
 const PIPELINE_INPUT_KEY = '@cta/pipeline_input';
 
-type SourceMode = 'text' | 'url' | 'pdf';
+type SourceMode = 'text' | 'url' | 'pdf' | 'image';
 
 // ── Inline sample data (no API call needed for samples) ─────
 const SAMPLES = [
@@ -64,13 +66,18 @@ export default function HomeScreen() {
   const [bodyText, setBodyText] = useState('');
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
   const [pdfFileName, setPdfFileName] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string | null>(null);
 
   const canRun =
     sourceMode === 'text'
       ? bodyText.trim().length >= 10
       : sourceMode === 'url'
         ? /^https?:\/\//i.test(bodyText.trim())
-        : !!pdfBase64;
+        : sourceMode === 'pdf'
+          ? !!pdfBase64
+          : !!imageBase64;
 
   const handleAnalyze = async () => {
     if (!canRun) {
@@ -78,13 +85,19 @@ export default function HomeScreen() {
         Alert.alert('Content Required', 'Please enter at least 10 characters.');
       } else if (sourceMode === 'url') {
         Alert.alert('URL Required', 'Enter a full URL starting with http:// or https://');
-      } else {
+      } else if (sourceMode === 'pdf') {
         Alert.alert('PDF Required', 'Pick a PDF file first.');
+      } else {
+        Alert.alert('Image Required', 'Pick an image first.');
       }
       return;
     }
     if (sourceMode === 'pdf' && pdfBase64 && pdfBase64.length > 7_000_000) {
       Alert.alert('PDF Too Large', 'Please use a PDF under ~5MB for reliable mobile upload.');
+      return;
+    }
+    if (sourceMode === 'image' && imageBase64 && imageBase64.length > 5_500_000) {
+      Alert.alert('Image Too Large', 'Please use an image under ~4MB.');
       return;
     }
     let content: string;
@@ -95,9 +108,12 @@ export default function HomeScreen() {
     } else if (sourceMode === 'url') {
       content = bodyText.trim();
       source = 'url';
-    } else {
+    } else if (sourceMode === 'pdf') {
       content = pdfBase64 as string;
       source = 'pdf_base64';
+    } else {
+      content = imageBase64 as string;
+      source = 'image_base64';
     }
     try {
       await AsyncStorage.setItem(PIPELINE_INPUT_KEY, JSON.stringify({ content, source }));
@@ -111,6 +127,9 @@ export default function HomeScreen() {
     setSourceMode('text');
     setPdfBase64(null);
     setPdfFileName(null);
+    setImageBase64(null);
+    setImageUri(null);
+    setImageFileName(null);
     setBodyText(sample.content);
   };
 
@@ -132,11 +151,42 @@ export default function HomeScreen() {
     }
   };
 
+  const pickImage = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission', 'Photo library access is required to upload images.');
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.85,
+        base64: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const asset = res.assets[0];
+      if (!asset.base64) {
+        Alert.alert('Image', 'Could not read image data. Try another photo.');
+        return;
+      }
+      setImageBase64(asset.base64);
+      setImageUri(asset.uri);
+      setImageFileName(asset.fileName ?? 'photo.jpg');
+    } catch (e) {
+      Alert.alert('Image', e instanceof Error ? e.message : 'Could not pick image');
+    }
+  };
+
   const setMode = (m: SourceMode) => {
     setSourceMode(m);
     if (m !== 'pdf') {
       setPdfBase64(null);
       setPdfFileName(null);
+    }
+    if (m !== 'image') {
+      setImageBase64(null);
+      setImageUri(null);
+      setImageFileName(null);
     }
   };
 
@@ -160,24 +210,24 @@ export default function HomeScreen() {
         <View style={styles.inputSection}>
           <Text style={styles.sectionTitle}>📥 Input Content</Text>
           <Text style={styles.sectionSubtitle}>
-            Text, public HTTPS URL, or PDF — normalized server-side before the Antigravity Manager runs.
+            Text, URL, PDF, or image — normalized server-side (Gemini vision for photos) before agents run.
           </Text>
 
           <View style={styles.modeRow}>
-            {(['text', 'url', 'pdf'] as const).map((m) => (
+            {(['text', 'url', 'pdf', 'image'] as const).map((m) => (
               <TouchableOpacity
                 key={m}
                 style={[styles.modeChip, sourceMode === m && styles.modeChipOn]}
                 onPress={() => setMode(m)}
               >
                 <Text style={[styles.modeChipText, sourceMode === m && styles.modeChipTextOn]}>
-                  {m === 'text' ? 'Text' : m === 'url' ? 'URL' : 'PDF'}
+                  {m === 'text' ? 'Text' : m === 'url' ? 'URL' : m === 'pdf' ? 'PDF' : 'Image'}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {sourceMode !== 'pdf' ? (
+          {sourceMode === 'text' || sourceMode === 'url' ? (
             <View style={styles.textAreaContainer}>
               <TextInput
                 style={styles.textArea}
@@ -201,7 +251,7 @@ export default function HomeScreen() {
                 </Text>
               </View>
             </View>
-          ) : (
+          ) : sourceMode === 'pdf' ? (
             <View style={styles.pdfBox}>
               <TouchableOpacity style={styles.pdfPickBtn} onPress={pickPdf} activeOpacity={0.85}>
                 <Ionicons name="document-attach" size={22} color="#fff" />
@@ -209,6 +259,21 @@ export default function HomeScreen() {
               </TouchableOpacity>
               <Text style={styles.pdfHint}>
                 {pdfFileName ? `Loaded: ${pdfFileName}` : 'Text is extracted on the server (text-based PDFs work best).'}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.pdfBox}>
+              <TouchableOpacity style={styles.pdfPickBtn} onPress={pickImage} activeOpacity={0.85}>
+                <Ionicons name="image" size={22} color="#fff" />
+                <Text style={styles.pdfPickText}>Pick Image</Text>
+              </TouchableOpacity>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.imagePreview} resizeMode="contain" />
+              ) : null}
+              <Text style={styles.pdfHint}>
+                {imageFileName
+                  ? `Loaded: ${imageFileName} — analyzed with Gemini vision on the server`
+                  : 'Screenshots, charts, photos, or document scans (max ~4MB).'}
               </Text>
             </View>
           )}
@@ -439,6 +504,13 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZES.sm,
     color: COLORS.textSecondary,
     textAlign: 'center',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 180,
+    marginTop: SPACING.md,
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: COLORS.surfaceElevated,
   },
   samplesSection: {
     marginBottom: SPACING.xxxl,

@@ -27,15 +27,20 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both email and password.');
+      if (Platform.OS === 'web') window.alert('Please enter both email and password.');
+      else Alert.alert('Error', 'Please enter both email and password.');
       return;
     }
 
     setLoading(true);
     try {
       await signIn(email.trim(), password);
+      router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Login Failed', error.message || 'Please check your credentials.');
+      console.error('Login Error:', error);
+      const msg = error.message || 'Please check your credentials.';
+      if (Platform.OS === 'web') window.alert('Login Failed: ' + msg);
+      else Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
     }

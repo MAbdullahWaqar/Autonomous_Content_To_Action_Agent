@@ -41,15 +41,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const { user: signedInUser } = await signInWithEmailAndPassword(auth, email, password);
+    setUser(signedInUser);
+    setLoading(false);
   };
 
   const signUp = async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
+    const { user: newUser } = await createUserWithEmailAndPassword(auth, email, password);
+    setUser(newUser);
+    setLoading(false);
   };
 
   const signOut = async () => {
     await firebaseSignOut(auth);
+    setUser(null);
   };
 
   return (

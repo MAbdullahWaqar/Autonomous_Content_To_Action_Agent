@@ -25,7 +25,7 @@ function initFirebase(): { app: FirebaseApp; auth: Auth } | null {
   return { app, auth: getAuth(app) };
 }
 
-type Source = 'text' | 'url' | 'pdf_base64';
+type Source = 'text' | 'url' | 'pdf_base64' | 'image_base64';
 
 export default function WebDemoClient() {
   const fb = useMemo(() => initFirebase(), []);
@@ -34,6 +34,7 @@ export default function WebDemoClient() {
   const [token, setToken] = useState<string | null>(null);
   const [source, setSource] = useState<Source>('text');
   const [content, setContent] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [resultJson, setResultJson] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -116,124 +117,199 @@ export default function WebDemoClient() {
 
   if (!fb) {
     return (
-      <div style={{ padding: 24, maxWidth: 720, color: '#e4e4e7', fontFamily: 'system-ui' }}>
-        <h1 style={{ fontSize: 22 }}>Web demo disabled</h1>
-        <p>Add <code>NEXT_PUBLIC_FIREBASE_*</code> keys to <code>.env.local</code> (same web app as mobile), then rebuild. See <code>.env.local.example</code>.</p>
+      <div className="demo-layout animate-fade-in" style={{ padding: '2rem' }}>
+        <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }} className="gradient-text">Web demo disabled</h1>
+          <p style={{ color: '#a1a1aa' }}>Add <code style={{ color: '#e4e4e7', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>NEXT_PUBLIC_FIREBASE_*</code> keys to <code style={{ color: '#e4e4e7', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>.env.local</code> (same web app as mobile), then rebuild. See <code style={{ color: '#e4e4e7', background: 'rgba(255,255,255,0.1)', padding: '0.2rem 0.4rem', borderRadius: '4px' }}>.env.local.example</code>.</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0a0f', color: '#e4e4e7', fontFamily: 'system-ui', padding: 24 }}>
-      <h1 style={{ fontSize: 22, marginBottom: 8 }}>CTA Agent — Web demo (optional)</h1>
-      <p style={{ color: '#a1a1aa', marginBottom: 20, maxWidth: 720 }}>
-        Same SSE pipeline as mobile. Use a Firebase email/password user from your project. Sandbox simulation — no production CRM/email.
-      </p>
+    <div className="demo-layout animate-fade-in">
+      <div className="header-container">
+        <span className="badge delay-100 animate-fade-in">Interactive Sandbox</span>
+        <h1 style={{ fontSize: '2.5rem', fontWeight: 800, marginBottom: '0.5rem' }} className="gradient-text delay-200 animate-fade-in">CTA Agent Demo</h1>
+        <p style={{ color: '#a1a1aa', maxWidth: '600px', margin: '0 auto' }} className="delay-300 animate-fade-in">
+          Same SSE pipeline as mobile. Use a Firebase email/password user from your project. Sandbox simulation — no production CRM/email.
+        </p>
+      </div>
 
-      {!token ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
-          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp} />
-          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={inp} />
-          <button type="button" onClick={login} style={btn}>Sign in</button>
-        </div>
-      ) : (
-        <>
-          <button type="button" onClick={logout} style={{ ...btn, marginBottom: 16, background: '#27272a' }}>
-            Sign out
-          </button>
-          <div style={{ marginBottom: 12 }}>
-            {(['text', 'url', 'pdf_base64'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSource(s)}
-                style={{
-                  ...chip,
-                  borderColor: source === s ? '#6366f1' : '#3f3f46',
-                  background: source === s ? '#1e1b4b' : '#18181b',
-                }}
-              >
-                {s}
-              </button>
-            ))}
+      <div className="glass-panel delay-400 animate-fade-in" style={{ padding: '2rem' }}>
+        {!token ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '400px', margin: '0 auto' }}>
+            <h2 style={{ textAlign: 'center', marginBottom: '1rem', color: '#f4f4f5' }}>Authentication Required</h2>
+            <input className="input-field" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className="input-field" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <button className="btn-primary" type="button" onClick={login} style={{ marginTop: '0.5rem' }}>Sign In to Demo</button>
           </div>
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            rows={10}
-            placeholder={source === 'url' ? 'https://…' : source === 'pdf_base64' ? 'Base64 PDF…' : 'Paste unstructured content…'}
-            style={{ ...inp, width: '100%', maxWidth: 720, minHeight: 160, fontFamily: 'monospace', fontSize: 13 }}
-          />
-          <button type="button" disabled={busy} onClick={run} style={{ ...btn, marginTop: 12 }}>
-            {busy ? 'Running…' : 'Run pipeline'}
-          </button>
-        </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {(['text', 'url', 'pdf_base64', 'image_base64'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      setSource(s);
+                      if (s !== 'image_base64') setImagePreview(null);
+                      if (s !== 'pdf_base64' && s !== 'image_base64') setContent('');
+                    }}
+                    className={`chip ${source === s ? 'active' : ''}`}
+                  >
+                    {s === 'pdf_base64'
+                      ? 'PDF'
+                      : s === 'image_base64'
+                        ? 'Image'
+                        : s.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button className="btn-secondary" type="button" onClick={logout} style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
+                Sign out
+              </button>
+            </div>
+            
+            {source === 'pdf_base64' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <label style={{ color: '#a1a1aa', fontSize: '0.875rem' }}>Upload a local PDF file:</label>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      const result = evt.target?.result as string;
+                      const base64 = result.split(',')[1];
+                      if (base64) setContent(base64);
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="input-field"
+                  style={{ cursor: 'pointer', padding: '0.5rem' }}
+                />
+                <label style={{ color: '#a1a1aa', fontSize: '0.875rem' }}>Or paste Base64 directly:</label>
+                <textarea
+                  className="input-field"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  rows={4}
+                  placeholder="Base64 encoded PDF string..."
+                  style={{ resize: 'vertical', minHeight: '80px', fontSize: '0.75rem', fontFamily: 'monospace' }}
+                />
+              </div>
+            ) : source === 'image_base64' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <label style={{ color: '#a1a1aa', fontSize: '0.875rem' }}>
+                  Upload an image (chart, screenshot, photo). Gemini vision describes it before agents run.
+                </label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 4 * 1024 * 1024) {
+                      setErr('Image must be under 4MB');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                      const result = evt.target?.result as string;
+                      const base64 = result.split(',')[1];
+                      if (base64) {
+                        setContent(base64);
+                        setImagePreview(result);
+                        setErr('');
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="input-field"
+                  style={{ cursor: 'pointer', padding: '0.5rem' }}
+                />
+                {imagePreview ? (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: 240,
+                      borderRadius: 12,
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  />
+                ) : null}
+              </div>
+            ) : (
+              <textarea
+                className="input-field"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={8}
+                placeholder={source === 'url' ? 'https://example.com/article' : 'Paste unstructured content text here...'}
+                style={{ resize: 'vertical', minHeight: '120px' }}
+              />
+            )}
+            
+            <button className="btn-primary" type="button" disabled={busy} onClick={run} style={{ alignSelf: 'flex-start' }}>
+              {busy ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg style={{ height: '1rem', width: '1rem', animation: 'spin 1s linear infinite' }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle style={{ opacity: 0.25 }} cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path style={{ opacity: 0.75 }} fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  Processing Pipeline...
+                </span>
+              ) : 'Run Pipeline'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {err && (
+        <div className="glass-panel animate-fade-in" style={{ marginTop: '1.5rem', padding: '1rem', borderColor: 'rgba(248, 113, 113, 0.3)', background: 'rgba(248, 113, 113, 0.05)' }}>
+          <p style={{ color: '#f87171', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <svg style={{ width: '1.25rem', height: '1.25rem' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            {err}
+          </p>
+        </div>
       )}
 
-      {err && <p style={{ color: '#f87171', marginTop: 16 }}>{err}</p>}
+      {(log.length > 0 || resultJson) && (
+        <div className="glass-panel animate-fade-in" style={{ marginTop: '2rem', padding: '1.5rem' }}>
+          {log.length > 0 && (
+            <div style={{ marginBottom: resultJson ? '2rem' : '0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <h2 style={{ fontSize: '1rem', color: '#f4f4f5', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <svg style={{ width: '1.25rem', height: '1.25rem', color: '#818cf8' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
+                  Pipeline Event Log
+                </h2>
+                <span style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{log.length} events</span>
+              </div>
+              <pre className="log-container">{log.join('\n')}</pre>
+            </div>
+          )}
 
-      <h2 style={{ fontSize: 16, marginTop: 24 }}>Event log</h2>
-      <pre
-        style={{
-          background: '#111',
-          border: '1px solid #27272a',
-          borderRadius: 8,
-          padding: 12,
-          maxHeight: 220,
-          overflow: 'auto',
-          fontSize: 11,
-          color: '#a3e635',
-        }}
-      >
-        {log.join('\n')}
-      </pre>
-
-      {resultJson && (
-        <>
-          <h2 style={{ fontSize: 16, marginTop: 24 }}>Final JSON (includes outcome_evidence)</h2>
-          <pre
-            style={{
-              background: '#111',
-              border: '1px solid #27272a',
-              borderRadius: 8,
-              padding: 12,
-              maxHeight: 420,
-              overflow: 'auto',
-              fontSize: 11,
-              color: '#e4e4e7',
-            }}
-          >
-            {resultJson}
-          </pre>
-        </>
+          {resultJson && (
+            <div className="animate-fade-in">
+              <h2 style={{ fontSize: '1rem', color: '#f4f4f5', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <svg style={{ width: '1.25rem', height: '1.25rem', color: '#34d399' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                Final JSON (includes outcome_evidence)
+              </h2>
+              <pre className="log-container log-container-light">{resultJson}</pre>
+            </div>
+          )}
+        </div>
       )}
+      
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}} />
     </div>
   );
 }
-
-const inp: CSSProperties = {
-  padding: '10px 12px',
-  borderRadius: 8,
-  border: '1px solid #3f3f46',
-  background: '#09090b',
-  color: '#fafafa',
-};
-
-const btn: CSSProperties = {
-  padding: '10px 16px',
-  borderRadius: 8,
-  border: 'none',
-  background: '#6366f1',
-  color: '#fff',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const chip: CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: 8,
-  border: '1px solid #3f3f46',
-  marginRight: 8,
-  color: '#e4e4e7',
-  cursor: 'pointer',
-};

@@ -9,7 +9,7 @@ export type TimeSensitivity = 'immediate' | 'this_week' | 'this_quarter' | 'long
 export type AgentStatus = 'waiting' | 'running' | 'done' | 'error';
 export type Priority = 'high' | 'medium' | 'low';
 
-export type PipelineContentSource = 'text' | 'url' | 'pdf_base64';
+export type PipelineContentSource = 'text' | 'url' | 'pdf_base64' | 'image_base64';
 
 // ── Ingestion (URL / PDF / text) ────────────────────────────
 export interface ContentIngestionMeta {

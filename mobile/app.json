@@ -7,7 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "cta-agent",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,14 +14,18 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cta.agent"
+      "bundleIdentifier": "com.cta.agent",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Allow CTA Agent to analyze images you select for the insight pipeline."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a1a"
       },
-      "package": "com.cta.agent"
+      "package": "com.cta.agent",
+      "usesCleartextTraffic": true
     },
     "web": {
       "bundler": "metro",

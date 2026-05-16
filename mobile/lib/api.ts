@@ -3,12 +3,55 @@
 // Handles SSE streaming for pipeline updates
 // ============================================================
 
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { auth } from './firebase';
 
-// TODO: Update this to your deployed backend URL
-// For local dev, use your machine's local network IP (not localhost)
-// e.g., 'http://192.168.1.100:3000'
-const API_BASE_URL = 'http://localhost:3000';
+/** Dev machine host from Expo (same Wi‑Fi as your phone). */
+function getExpoDevHost(): string | null {
+  const debuggerHost = Constants.expoGoConfig?.debuggerHost;
+  if (debuggerHost) return debuggerHost.split(':')[0] ?? null;
+
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (!hostUri) return null;
+
+  if (hostUri.includes('://')) {
+    try {
+      return new URL(hostUri).hostname;
+    } catch {
+      return null;
+    }
+  }
+  return hostUri.split(':')[0] ?? null;
+}
+
+/** Backend base URL — web uses localhost; phone must use your computer's LAN IP. */
+export function getApiBaseUrl(): string {
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return window.location.origin;
+    }
+    return 'http://localhost:3000';
+  }
+
+  const devHost = getExpoDevHost();
+  if (devHost) return `http://${devHost}:3000`;
+
+  // Android emulator only (not physical device)
+  if (Platform.OS === 'android') return 'http://10.0.2.2:3000';
+
+  // iOS simulator
+  return 'http://localhost:3000';
+}
+
+function logApiBaseUrl() {
+  if (__DEV__) {
+    console.log('[API] Backend URL:', getApiBaseUrl());
+  }
+}
 
 // ── Get auth token ──────────────────────────────────────────
 async function getAuthToken(): Promise<string> {
@@ -19,8 +62,9 @@ async function getAuthToken(): Promise<string> {
 
 // ── Generic fetch with auth ─────────────────────────────────
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  logApiBaseUrl();
   const token = await getAuthToken();
-  return fetch(`${API_BASE_URL}${path}`, {
+  return fetch(`${getApiBaseUrl()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -35,23 +79,23 @@ export type Urgency = 'low' | 'medium' | 'high' | 'critical';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type Priority = 'high' | 'medium' | 'low';
 
-export type PipelineContentSource = 'text' | 'url' | 'pdf_base64';
+export type PipelineContentSource = 'text' | 'url' | 'pdf_base64' | 'image_base64';
 
 export interface SSEEvent {
   type:
-    | 'ingestion_complete'
-    | 'workplan_start'
-    | 'workplan_complete'
-    | 'tool_invocation'
-    | 'critic_start'
-    | 'critic_complete'
-    | 'action_regeneration_start'
-    | 'webhook_dispatch'
-    | 'agent_start'
-    | 'agent_complete'
-    | 'agent_error'
-    | 'pipeline_complete'
-    | 'pipeline_error';
+  | 'ingestion_complete'
+  | 'workplan_start'
+  | 'workplan_complete'
+  | 'tool_invocation'
+  | 'critic_start'
+  | 'critic_complete'
+  | 'action_regeneration_start'
+  | 'webhook_dispatch'
+  | 'agent_start'
+  | 'agent_complete'
+  | 'agent_error'
+  | 'pipeline_complete'
+  | 'pipeline_error';
   agent?: string;
   agentIndex?: number;
   data?: any;
@@ -227,21 +271,42 @@ export interface SampleContent {
   content: string;
 }
 
-// ── Run Pipeline (SSE Streaming) ────────────────────────────
-export async function runPipeline(
+function parseSseLines(buffer: string, onEvent: (event: SSEEvent) => void): string {
+  const lines = buffer.split('\n');
+  const remainder = lines.pop() || '';
+
+  for (const line of lines) {
+    if (!line.startsWith('data: ')) continue;
+    try {
+      const event: SSEEvent = JSON.parse(line.slice(6));
+      onEvent(event);
+      if (event.type === 'pipeline_error') {
+        throw new Error(event.error || 'Pipeline failed');
+      }
+    } catch (parseError) {
+      if (parseError instanceof Error && parseError.message.includes('Pipeline failed')) {
+        throw parseError;
+      }
+    }
+  }
+
+  return remainder;
+}
+
+/** Web: fetch + ReadableStream SSE reader. */
+async function runPipelineSse(
   content: string,
   source: PipelineContentSource,
-  onEvent: (event: SSEEvent) => void
+  onEvent: (event: SSEEvent) => void,
+  token: string
 ): Promise<PipelineResult> {
-  const token = await getAuthToken();
-
-  const response = await fetch(`${API_BASE_URL}/api/pipeline`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/pipeline`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ content, source }),
+    body: JSON.stringify({ content, source, stream: true }),
   });
 
   if (!response.ok) {
@@ -260,40 +325,76 @@ export async function runPipeline(
     const { done, value } = await reader.read();
     if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-
-    // Parse SSE events from buffer
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const event: SSEEvent = JSON.parse(line.slice(6));
-          onEvent(event);
-
-          if (event.type === 'pipeline_complete' && event.data) {
-            finalResult = event.data as PipelineResult;
-          }
-
-          if (event.type === 'pipeline_error') {
-            throw new Error(event.error || 'Pipeline failed');
-          }
-        } catch (parseError) {
-          if (parseError instanceof Error && parseError.message.includes('Pipeline failed')) {
-            throw parseError;
-          }
-          // Ignore JSON parse errors for incomplete data
-        }
+    buffer = parseSseLines(buffer + decoder.decode(value, { stream: true }), (event) => {
+      onEvent(event);
+      if (event.type === 'pipeline_complete' && event.data) {
+        finalResult = event.data as PipelineResult;
       }
+    });
+  }
+
+  buffer = parseSseLines(buffer + '\n', onEvent);
+  if (!finalResult) throw new Error('Pipeline completed without a result');
+  return finalResult;
+}
+
+/** Native: wait for full JSON (RN fetch cannot stream SSE reliably). */
+async function runPipelineJson(
+  content: string,
+  source: PipelineContentSource,
+  onEvent: (event: SSEEvent) => void,
+  token: string
+): Promise<PipelineResult> {
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/api/pipeline`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ content, source, stream: false }),
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    let message = text;
+    try {
+      message = JSON.parse(text).error ?? text;
+    } catch {
+      // use raw text
+    }
+    throw new Error(`Pipeline request failed: ${response.status} — ${message}`);
+  }
+
+  const payload = JSON.parse(text) as { result?: PipelineResult; events?: SSEEvent[]; error?: string };
+  if (payload.error) throw new Error(payload.error);
+
+  const events = payload.events ?? [];
+  for (const event of events) {
+    onEvent(event);
+    if (event.type === 'pipeline_error') {
+      throw new Error(event.error || 'Pipeline failed');
     }
   }
 
-  if (!finalResult) {
-    throw new Error('Pipeline completed without a result');
+  if (!payload.result) throw new Error('Pipeline completed without a result');
+  return payload.result;
+}
+
+// ── Run Pipeline ────────────────────────────────────────────
+export async function runPipeline(
+  content: string,
+  source: PipelineContentSource,
+  onEvent: (event: SSEEvent) => void
+): Promise<PipelineResult> {
+  logApiBaseUrl();
+  const token = await getAuthToken();
+
+  if (Platform.OS === 'web') {
+    return runPipelineSse(content, source, onEvent, token);
   }
 
-  return finalResult;
+  return runPipelineJson(content, source, onEvent, token);
 }
 
 // ── Get User Reports ────────────────────────────────────────
@@ -318,7 +419,7 @@ export async function deleteReportApi(id: string): Promise<void> {
 
 // ── Get Sample Content ──────────────────────────────────────
 export async function getSamples(): Promise<SampleContent[]> {
-  const response = await fetch(`${API_BASE_URL}/api/samples`);
+  const response = await fetch(`${getApiBaseUrl()}/api/samples`);
   if (!response.ok) throw new Error('Failed to fetch samples');
   return response.json();
 }

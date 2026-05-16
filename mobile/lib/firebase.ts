@@ -3,44 +3,44 @@
 // Uses the Firebase JS SDK (compatible with Expo Go)
 // ============================================================
 
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  // @ts-expect-error — getReactNativePersistence is exported but not in types
   getReactNativePersistence,
   type Auth,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// TODO: Replace with your Firebase project config from the Firebase Console
 const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyCrw2GRhaC_4utbPmSlsn3rhA4YnykTcPQ',
+  authDomain: 'gen-lang-client-0841257737.firebaseapp.com',
+  projectId: 'gen-lang-client-0841257737',
+  storageBucket: 'gen-lang-client-0841257737.firebasestorage.app',
+  messagingSenderId: '511680675738',
+  appId: '1:511680675738:web:cb25a5d3e80877686f4423',
 };
 
-// Initialize Firebase (only once)
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// Initialize Auth with persistence
-let auth: Auth;
-if (Platform.OS === 'web') {
-  auth = getAuth(app);
-} else {
+function createAuth(): Auth {
+  if (Platform.OS === 'web') {
+    return getAuth(app);
+  }
+
   try {
-    auth = initializeAuth(app, {
+    return initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
-  } catch {
-    // Already initialized
-    auth = getAuth(app);
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'auth/already-initialized') {
+      return getAuth(app);
+    }
+    throw error;
   }
 }
 
-export { auth };
+export const auth = createAuth();
 export default app;

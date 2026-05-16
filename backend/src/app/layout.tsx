@@ -1,4 +1,8 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: 'CTA Agent API',
@@ -11,8 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+    <html lang="en" className={inter.variable}>
+      <body>{children}</body>
     </html>
   );
 }

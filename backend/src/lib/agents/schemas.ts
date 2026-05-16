@@ -16,17 +16,17 @@ export const ContentUnderstandingSchema = z.object({
 
 // ── Agent 2: Insight Extractor ──────────────────────────────
 export const InsightSchema = z.object({
-  key_facts: z.array(z.string()).min(2).max(5).describe('Specific, quantified facts extracted from the content — include numbers, percentages, regions'),
+  key_facts: z.array(z.string()).describe('Specific, quantified facts extracted from the content — include numbers, percentages, regions'),
   main_insight: z.string().describe('The single most important non-obvious insight — must be specific, quantified, and actionable. Not a restatement of the input.'),
-  signals: z.array(z.string()).min(1).max(4).describe('Leading indicators or signals that suggest what happens next'),
+  signals: z.array(z.string()).describe('Leading indicators or signals that suggest what happens next'),
   urgency: z.enum(['low', 'medium', 'high', 'critical']).describe('How urgently should someone act on this insight?'),
 });
 
 // ── Agent 3: Impact Analyzer ────────────────────────────────
 export const ImpactSchema = z.object({
-  implications: z.array(z.string()).min(3).max(5).describe('First, second, and third-order consequences — each from a different stakeholder perspective'),
+  implications: z.array(z.string()).describe('First, second, and third-order consequences — each from a different stakeholder perspective'),
   severity: z.enum(['low', 'medium', 'high', 'critical']).describe('Overall severity of impact'),
-  affected_stakeholders: z.array(z.string()).min(2).max(5).describe('Specific stakeholder groups affected (e.g., "last-mile delivery companies in Punjab", not just "businesses")'),
+  affected_stakeholders: z.array(z.string()).describe('Specific stakeholder groups affected (e.g., "last-mile delivery companies in Punjab", not just "businesses")'),
   estimated_impact: z.string().describe('Quantified impact estimate with stated assumptions (e.g., "Rs. 1.2M additional monthly cost per 50-truck fleet")'),
   consequence_if_ignored: z.string().describe('What happens if no action is taken — be specific about competitive or operational consequences'),
 });
@@ -40,17 +40,16 @@ export const ActionSchema = z.object({
     owner: z.string().describe('Who executes this (job title, e.g., "Head of Logistics Operations")'),
     expected_result: z.string().describe('Measurable outcome of taking this action'),
     priority: z.enum(['high', 'medium', 'low']),
-  })).length(3),
+  })).describe('Exactly 3 ranked actions based on the insights and impact analysis'),
   top_action: z.string().describe('The most critical action (Rank 1) restated clearly — this is what gets simulated'),
 });
 
 // ── Action Quality Critic (between actions and simulation) ───
 export const ActionCriticSchema = z.object({
   verdict: z.enum(['approve', 'reject']).describe('approve if actions are specific, tied to insight, and executable; reject if generic or misaligned'),
-  reasoning_chain: z.array(z.string()).min(2).max(6).describe('Short chain: what you checked and why'),
+  reasoning_chain: z.array(z.string()).describe('Short chain: what you checked and why'),
   problems: z
     .array(z.string())
-    .max(5)
     .describe('Concrete defects (empty if approve) — e.g. "Rank 1 lacks owner", "no numbers"'),
   improvement_instructions: z
     .string()
@@ -68,7 +67,7 @@ export const SimulationSchema = z.object({
     tool_used: z.string().describe('One of: google_sheets_tool, gmail_tool, google_drive_tool, web_search_tool, crm_tool, notification_service, database_tool, analytics_tool'),
     status: z.string(),
     timestamp: z.string(),
-  })).min(5).max(8),
+  })),
   notification_subject: z.string().describe('Email/SMS subject line — professional and realistic'),
   notification_body: z.string().describe('Full email/SMS body — professional, send-ready, includes specific details from the simulation'),
   projected_reach: z.string().describe('Number of customers/users this action would reach'),

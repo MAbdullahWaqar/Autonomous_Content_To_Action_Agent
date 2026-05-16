@@ -27,7 +27,8 @@ export async function verifyAuth(request: Request): Promise<AuthUser | null> {
       uid: decoded.uid,
       email: decoded.email,
     };
-  } catch {
+  } catch (err) {
+    console.error('Firebase Auth Verification Error:', err);
     return null;
   }
 }

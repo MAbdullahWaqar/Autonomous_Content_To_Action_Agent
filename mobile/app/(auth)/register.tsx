@@ -43,6 +43,7 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await signUp(email.trim(), password);
+      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert('Registration Failed', error.message || 'Please try again.');
     } finally {

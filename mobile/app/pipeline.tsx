@@ -18,7 +18,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { runPipeline, type SSEEvent, type PipelineResult, type AntigravityWorkPlanClient, type PipelineContentSource } from '@/lib/api';
+import {
+  runPipeline,
+  getApiBaseUrl,
+  type SSEEvent,
+  type PipelineResult,
+  type AntigravityWorkPlanClient,
+  type PipelineContentSource,
+} from '@/lib/api';
 import { COLORS, SPACING, FONT_SIZES, BORDER_RADIUS, SHADOWS, getUrgencyColor } from '@/lib/theme';
 
 const PIPELINE_INPUT_KEY = '@cta/pipeline_input';
@@ -130,6 +137,12 @@ export default function PipelineScreen() {
     setWorkPlanBusy(true);
     setLastCriticVerdict(null);
     setAgentActivity([]);
+    setPipelineStatus('running');
+    setAgents((prev) =>
+      prev.map((agent, index) =>
+        index === 0 ? { ...agent, status: 'running' as const } : agent
+      )
+    );
 
     const handleEvent = (event: SSEEvent) => {
       if (event.type === 'workplan_start') {
@@ -222,7 +235,15 @@ export default function PipelineScreen() {
     };
 
     runPipeline(payload.content, payload.source, handleEvent).catch((err) => {
-      setError(err.message);
+      const msg = err instanceof Error ? err.message : 'Pipeline failed';
+      if (msg.includes('Network request failed')) {
+        setError(
+          `Cannot reach the backend at ${getApiBaseUrl()}. ` +
+            'Use the same Wi‑Fi as your computer, run "npm run dev" in backend/, and set EXPO_PUBLIC_API_URL in mobile/.env if needed.'
+        );
+      } else {
+        setError(msg);
+      }
       setPipelineStatus('error');
     });
   }, [init, payload]);

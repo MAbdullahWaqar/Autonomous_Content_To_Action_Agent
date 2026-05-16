@@ -6,9 +6,11 @@
 import * as cheerio from 'cheerio';
 
 import type { ContentIngestionMeta, PipelineContentSource } from '../agents/types';
+import { analyzeImageToText, parseImageBase64 } from './analyze-image';
 
 const MAX_TEXT_CHARS = 120_000;
 const MAX_PDF_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 function stripHtmlToText(html: string): string {
   try {
@@ -88,6 +90,25 @@ export async function resolvePipelineContent(
         bytes_received: Buffer.byteLength(html, 'utf8'),
         chars_resolved: plain.length,
         text_preview: plain.slice(0, 400),
+      },
+    };
+  }
+
+  if (source === 'image_base64') {
+    const { buffer, mimeType } = parseImageBase64(trimmed);
+    if (buffer.length > MAX_IMAGE_BYTES) {
+      throw new Error(`Image exceeds ${MAX_IMAGE_BYTES / (1024 * 1024)}MB limit`);
+    }
+    const visionText = await analyzeImageToText(buffer, mimeType);
+    const text = visionText.slice(0, MAX_TEXT_CHARS);
+    return {
+      text,
+      meta: {
+        source_type: 'image_base64',
+        bytes_received: buffer.length,
+        chars_resolved: text.length,
+        text_preview: text.slice(0, 400),
+        notes: `Vision analysis (${mimeType}) — agents run on extracted description`,
       },
     };
   }
