@@ -5,28 +5,93 @@
 
 import { z } from 'zod';
 
+/** Coerce LLM output that returns a single string instead of an array. */
+function coerceStringArray(val: unknown): string[] {
+  if (Array.isArray(val)) {
+    return val.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof val === 'string' && val.trim()) {
+    return [val.trim()];
+  }
+  return [];
+}
+
+function normalizeEnum<T extends string>(
+  val: unknown,
+  allowed: readonly T[],
+  fallback: T
+): T {
+  if (typeof val !== 'string') return fallback;
+  const normalized = val.toLowerCase().trim().replace(/[\s-]+/g, '_');
+  const direct = allowed.find((a) => a === normalized);
+  if (direct) return direct;
+
+  const aliases: Record<string, T> = {
+    urgent: 'high' as T,
+    severe: 'critical' as T,
+    asap: 'immediate' as T,
+    soon: 'this_week' as T,
+  };
+  return aliases[normalized] ?? fallback;
+}
+
+const stringArray = (minItems = 1) =>
+  z.preprocess(
+    coerceStringArray,
+    minItems > 0 ? z.array(z.string()).min(minItems) : z.array(z.string())
+  );
+
+const urgencyLevel = () =>
+  z.preprocess(
+    (val) => normalizeEnum(val, ['low', 'medium', 'high', 'critical'] as const, 'medium'),
+    z.enum(['low', 'medium', 'high', 'critical'])
+  );
+
+const severityLevel = () =>
+  z.preprocess(
+    (val) => normalizeEnum(val, ['low', 'medium', 'high', 'critical'] as const, 'medium'),
+    z.enum(['low', 'medium', 'high', 'critical'])
+  );
+
+const timeSensitivity = () =>
+  z.preprocess(
+    (val) =>
+      normalizeEnum(
+        val,
+        ['immediate', 'this_week', 'this_quarter', 'long_term'] as const,
+        'this_quarter'
+      ),
+    z.enum(['immediate', 'this_week', 'this_quarter', 'long_term'])
+  );
+
+const priorityLevel = () =>
+  z.preprocess(
+    (val) => normalizeEnum(val, ['high', 'medium', 'low'] as const, 'medium'),
+    z.enum(['high', 'medium', 'low'])
+  );
+
 // ── Agent 1: Content Understanding ──────────────────────────
 export const ContentUnderstandingSchema = z.object({
   domain: z.string().describe('The primary domain of the content (e.g., logistics, finance, policy, supply chain, healthcare, urban systems, business operations)'),
-  entities: z.array(z.string()).describe('Key entities mentioned: companies, regions, people, products, systems'),
+  entities: stringArray(0).describe('Key entities mentioned: companies, regions, people, products, systems'),
   change_detected: z.string().describe('What changed or is about to change, stated clearly and specifically'),
-  time_sensitivity: z.enum(['immediate', 'this_week', 'this_quarter', 'long_term']).describe('How urgently does this need attention?'),
+  time_sensitivity: timeSensitivity().describe('How urgently does this need attention?'),
   inferred_context: z.string().describe('Context NOT explicitly stated in the content but important for understanding implications'),
 });
 
 // ── Agent 2: Insight Extractor ──────────────────────────────
 export const InsightSchema = z.object({
-  key_facts: z.array(z.string()).describe('Specific, quantified facts extracted from the content — include numbers, percentages, regions'),
-  main_insight: z.string().describe('The single most important non-obvious insight — must be specific, quantified, and actionable. Not a restatement of the input.'),
-  signals: z.array(z.string()).describe('Leading indicators or signals that suggest what happens next'),
-  urgency: z.enum(['low', 'medium', 'high', 'critical']).describe('How urgently should someone act on this insight?'),
+  key_facts: stringArray().describe('Specific, quantified facts extracted from the content — include numbers, percentages, regions'),
+  main_insight: z.string().min(1).describe('The single most important non-obvious insight — must be specific, quantified, and actionable. Not a restatement of the input.'),
+  signals: stringArray().describe('Leading indicators or signals that suggest what happens next'),
+  urgency: urgencyLevel().describe('How urgently should someone act on this insight?'),
 });
 
 // ── Agent 3: Impact Analyzer ────────────────────────────────
 export const ImpactSchema = z.object({
-  implications: z.array(z.string()).describe('First, second, and third-order consequences — each from a different stakeholder perspective'),
-  severity: z.enum(['low', 'medium', 'high', 'critical']).describe('Overall severity of impact'),
-  affected_stakeholders: z.array(z.string()).describe('Specific stakeholder groups affected (e.g., "last-mile delivery companies in Punjab", not just "businesses")'),
+  implications: stringArray().describe('First, second, and third-order consequences — each from a different stakeholder perspective'),
+  severity: severityLevel().describe('Overall severity of impact'),
+  affected_stakeholders: stringArray().describe('Specific stakeholder groups affected (e.g., "last-mile delivery companies in Punjab", not just "businesses")'),
   estimated_impact: z.string().describe('Quantified impact estimate with stated assumptions (e.g., "Rs. 1.2M additional monthly cost per 50-truck fleet")'),
   consequence_if_ignored: z.string().describe('What happens if no action is taken — be specific about competitive or operational consequences'),
 });
@@ -39,7 +104,7 @@ export const ActionSchema = z.object({
     rationale: z.string().describe('Why this action, tied directly to the insight'),
     owner: z.string().describe('Who executes this (job title, e.g., "Head of Logistics Operations")'),
     expected_result: z.string().describe('Measurable outcome of taking this action'),
-    priority: z.enum(['high', 'medium', 'low']),
+    priority: priorityLevel(),
   })).describe('Exactly 3 ranked actions based on the insights and impact analysis'),
   top_action: z.string().describe('The most critical action (Rank 1) restated clearly — this is what gets simulated'),
 });
