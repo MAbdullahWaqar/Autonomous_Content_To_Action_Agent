@@ -1,0 +1,39 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "node": "20.19.4",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://cta-backend-production.up.railway.app",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCrw2GRhaC_4utbPmSlsn3rhA4YnykTcPQ",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "gen-lang-client-0841257737.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "gen-lang-client-0841257737",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "gen-lang-client-0841257737.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "511680675738",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:511680675738:web:cb25a5d3e80877686f4423"
+      }
+    },
+    "production": {
+      "node": "20.19.4",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://cta-backend-production.up.railway.app",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCrw2GRhaC_4utbPmSlsn3rhA4YnykTcPQ",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "gen-lang-client-0841257737.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "gen-lang-client-0841257737",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "gen-lang-client-0841257737.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "511680675738",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:511680675738:web:cb25a5d3e80877686f4423"
+      }
+    }
+  }
+}
