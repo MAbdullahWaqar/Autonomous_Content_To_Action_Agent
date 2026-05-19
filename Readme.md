@@ -9,28 +9,43 @@
 | Agent trace / planning | SSE + `agent_trace` + work plan JSON in response |
 | Documentation | This file + [ANTIGRAVITY.md](./ANTIGRAVITY.md) |
 
+### Hackathon submission links
+
+| Item | URL / location |
+|------|----------------|
+| **Production API** | `https://cta-backend-production.up.railway.app` |
+| **Web demo** | `https://cta-backend-production.up.railway.app/demo` (requires Firebase env on host) |
+| **Mobile app (APK)** | Built via EAS (`mobile/eas.json`, preview profile); upload public Google Drive link in submission form |
+| **Antigravity trace** | [ANTIGRAVITY.md](./ANTIGRAVITY.md) |
+| **Source code** | This repository (`backend/` + `mobile/`) |
+
 ---
 
 ## Table of contents
 
 1. [Overview](#overview)  
-2. [How it maps to the challenge brief](#how-it-maps-to-the-challenge-brief)  
-3. [Architecture](#architecture)  
-4. [Tech stack](#tech-stack)  
-5. [Repository layout](#repository-layout)  
-6. [Prerequisites](#prerequisites)  
-7. [Backend setup](#backend-setup)  
-8. [Mobile app setup](#mobile-app-setup)  
-9. [Optional web demo (`/demo`)](#optional-web-demo-demo)  
-10. [API reference](#api-reference)  
-11. [Pipeline stages (runtime)](#pipeline-stages-runtime)  
-12. [Google Antigravity (development vs runtime)](#google-antigravity-development-vs-runtime)  
-13. [Security and data handling](#security-and-data-handling)  
-14. [Scripts and quality checks](#scripts-and-quality-checks)  
-15. [Troubleshooting](#troubleshooting)  
-16. [Demo video checklist](#demo-video-checklist)  
-17. [Assumptions and limitations](#assumptions-and-limitations)  
-18. [License](#license)
+2. [Solution design](#solution-design)  
+3. [System architecture](#system-architecture)  
+4. [Agents developed](#agents-developed)  
+5. [Mock vs real APIs and external services](#mock-vs-real-apis-and-external-services)  
+6. [Integrations implemented](#integrations-implemented)  
+7. [Deployment and environments](#deployment-and-environments)  
+8. [How it maps to the challenge brief](#how-it-maps-to-the-challenge-brief)  
+9. [Tech stack](#tech-stack)  
+10. [Repository layout](#repository-layout)  
+11. [Prerequisites](#prerequisites)  
+12. [Backend setup](#backend-setup)  
+13. [Mobile app setup](#mobile-app-setup)  
+14. [Optional web demo (`/demo`)](#optional-web-demo-demo)  
+15. [API reference](#api-reference)  
+16. [Pipeline stages (runtime)](#pipeline-stages-runtime)  
+17. [Google Antigravity (development vs runtime)](#google-antigravity-development-vs-runtime)  
+18. [Security and data handling](#security-and-data-handling)  
+19. [Scripts and quality checks](#scripts-and-quality-checks)  
+20. [Troubleshooting](#troubleshooting)  
+21. [Demo video checklist](#demo-video-checklist)  
+22. [Assumptions and limitations](#assumptions-and-limitations)  
+23. [License](#license)
 
 ---
 
@@ -49,6 +64,346 @@ The **mobile app** drives the experience: paste text, enter a URL, pick a PDF, o
 
 ---
 
+## Solution design
+
+### Problem statement
+
+Organizations receive unstructured signals—news, PDFs, dashboards, policy updates, operational reports—and need more than a summary. They need **actionable intelligence**: what changed, who is affected, what to do next, and what happens if the top recommendation is executed.
+
+### Design goals
+
+| Goal | How we address it |
+|------|-------------------|
+| **Structured reasoning** | Every LLM step uses `generateObject()` + Zod schemas—not free text parsing—so outputs are typed, validated, and composable across agents. |
+| **Non-generic insights** | Expert-persona prompts with BAD/GOOD examples, thinking chains, and an **Action Quality Critic** that can reject weak action sets and force one regeneration round. |
+| **Verifiable “execution”** | Simulation steps reference named tools; a **mock tool bridge** runs deterministic handlers and emits auditable `audit_line` records with latency and digests. |
+| **Observable outcomes** | `outcome_evidence` provides KPI snapshots, before/after diffs, and validation flags; optional **real HTTP webhook** for external systems. |
+| **Antigravity alignment** | A **Manager work plan** runs before specialists, mirroring Google Antigravity’s plan → delegate → verify narrative (see [ANTIGRAVITY.md](./ANTIGRAVITY.md)). |
+| **Multi-channel input** | Text, public URL, PDF, and **image upload** (vision → text) normalize to one string before the agent chain. |
+| **Production-shaped clients** | Expo mobile (required) + Next.js backend; Firebase auth; Firestore history; deployable API (e.g. Railway). |
+
+### End-to-end user journey
+
+1. User signs in (Firebase email/password) on **mobile** or **web demo**.  
+2. User submits content via **Text**, **URL**, **PDF**, or **Image**.  
+3. Backend **ingests** content into normalized text + metadata.  
+4. **Manager** emits a structured work plan (mission, reasoning chain, six planned tasks).  
+5. **Six specialist agents** run sequentially; context accumulates in JSON between steps.  
+6. **Critic** may reject actions once and trigger regeneration with explicit feedback.  
+7. **Simulator** drafts execution steps; **tool bridge** “executes” each tool name.  
+8. **Outcome evidence** and optional **webhook** fire; **reporter** produces narrative summaries.  
+9. Full **`PipelineResult`** returns to the client; report is saved to **Firestore** (per user).  
+10. User reviews the report screen (before/after tables, steps, notification draft, agent trace).
+
+### Key design decisions
+
+- **Sequential agents (not parallel):** Each step needs prior context (e.g. impact depends on insight). Simpler to debug, trace, and stream over SSE.  
+- **SSE on web, JSON batch on mobile:** React Native does not reliably stream SSE bodies; mobile uses `stream: false` and replays events from `{ result, events }`.  
+- **Sandbox simulation:** No live Gmail/CRM/Sheets in the default path—mock tools avoid credentials and ToS issues while still producing auditable logs.  
+- **Single LLM provider (Gemini):** Google AI Studio API via Vercel AI SDK; model default `gemini-2.5-flash` (configurable via `GEMINI_MODEL`).
+
+---
+
+## System architecture
+
+### Logical architecture
+
+```mermaid
+flowchart TB
+  subgraph clients [Client layer]
+    M[Expo mobile app\niOS / Android APK]
+    W[Next.js /demo\nbrowser]
+  end
+
+  subgraph auth [Identity]
+    FA[Firebase Auth\nemail/password]
+    FAD[Firebase Admin\nID token verify]
+  end
+
+  subgraph api [Next.js API layer]
+    P["POST /api/pipeline"]
+    R["GET/DELETE /api/reports"]
+    S["GET /api/samples"]
+  end
+
+  subgraph ingest [Ingestion layer]
+    T[Plain text]
+    U[URL fetch + Cheerio]
+    PDF[pdf-parse]
+    IMG[Gemini vision]
+  end
+
+  subgraph orchestration [Agent orchestration]
+    WP[Antigravity Manager\nwork plan]
+    A1[Content Understanding]
+    A2[Insight Extraction]
+    A3[Impact Analysis]
+    A4[Action + Critic loop]
+    A5[Execution Simulator]
+    A6[Outcome Reporter]
+  end
+
+  subgraph execution [Execution and evidence]
+    TB[Mock tool bridge]
+    EV[outcome_evidence builder]
+    WH[Optional real webhook]
+  end
+
+  subgraph data [Data layer]
+    GEM[Google Gemini API]
+    FS[(Firestore reports)]
+  end
+
+  M --> FA
+  W --> FA
+  M --> P
+  W --> P
+  P --> FAD
+  P --> ingest
+  ingest --> WP --> A1 --> A2 --> A3 --> A4 --> A5 --> TB --> EV --> WH --> A6
+  A1 & A2 & A3 & A4 & A5 & A6 & WP --> GEM
+  IMG --> GEM
+  P --> FS
+```
+
+### Component responsibilities
+
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| **Mobile app** | `mobile/app/` | Auth UI, four input modes, pipeline progress UI, report/history/settings tabs |
+| **API routes** | `backend/src/app/api/` | HTTP entry points, auth gate, SSE/JSON responses |
+| **Pipeline orchestrator** | `backend/src/lib/agents/pipeline.ts` | Runs agents in order, emits SSE events, assembles `PipelineResult` |
+| **Prompts & schemas** | `prompts.ts`, `schemas.ts` | Persona prompts and Zod shapes for structured Gemini output |
+| **Ingestion** | `lib/ingest/` | Normalize text/URL/PDF/image to a single string |
+| **Antigravity module** | `lib/antigravity/` | Work plan schema/prompts + mock tool bridge |
+| **Webhooks** | `lib/webhooks/` | Optional real outbound POST after simulation |
+| **Auth** | `lib/auth.ts` | Verify Firebase Bearer tokens on API routes |
+| **Firestore** | `lib/firestore.ts` | Persist and list reports per `userId` |
+
+### Request path (detailed)
+
+```
+Client (Firebase ID token in Authorization header)
+  → POST /api/pipeline { content, source, stream? }
+  → verifyAuth() — Firebase Admin decode; 401 if invalid
+  → resolvePipelineContent() — text | url | pdf_base64 | image_base64
+  → runPipeline(normalizedText, onEvent, ingestionMeta)
+       → emit ingestion_complete
+       → workplan_start → generateObject(AntigravityWorkPlan) → workplan_complete
+       → for each specialist agent (0..5):
+            agent_start → generateObject(schema) → agent_complete | agent_error
+       → action loop: generateObject(Action) → critic → optional regeneration
+       → generateObject(Simulation) → validate → optional retry
+       → executeAntigravityToolBridge() → tool_invocation events
+       → buildOutcomeEvidence()
+       → dispatchActionWebhook() if ACTION_WEBHOOK_URL set
+       → generateObject(OutcomeReport)
+       → pipeline_complete(PipelineResult)
+  → saveReport(userId, result) — best-effort Firestore write
+  → stream ends OR JSON { result, events } returned
+```
+
+---
+
+## Agents developed
+
+The system implements **seven LLM-powered roles** (six indexed specialists + one critic) plus **one Manager planning step**. All use **Google Gemini** via `generateObject()` unless noted.
+
+### Manager — Antigravity work plan (pre-pipeline)
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Produce an auditable mission, reasoning chain, and six `planned_tasks` aligned to downstream specialists |
+| **Schema** | `AntigravityWorkPlanSchema` (`lib/antigravity/schemas.ts`) |
+| **Output fields** | `mission`, `reasoning_chain[]`, `planned_tasks[]` (task_id, title, manager_surface, depends_on, expected_artifact), `tool_integration_notes` |
+| **Runs** | Once per pipeline, before Agent 1 |
+
+### Agent 1 — ContentUnderstandingAgent
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Establish domain, entities, detected change, time sensitivity, inferred context |
+| **Input** | Normalized content string (+ ingestion metadata in work plan payload) |
+| **Output schema** | `ContentUnderstandingSchema` — `domain`, `entities[]`, `change_detected`, `time_sensitivity`, `inferred_context` |
+| **Evaluation focus** | Challenge step 1 — content understanding |
+
+### Agent 2 — InsightExtractorAgent
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Extract non-obvious insights—not generic summaries |
+| **Input** | Content + Agent 1 output (JSON context) |
+| **Output schema** | `InsightSchema` — `key_facts[]`, `main_insight`, `signals[]`, `urgency` (low\|medium\|high\|critical) |
+| **Evaluation focus** | Challenge step 2 — insight extraction |
+
+### Agent 3 — ImpactAnalyzerAgent
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Map consequences, severity, stakeholders, estimated impact |
+| **Input** | Prior agents’ outputs |
+| **Output schema** | `ImpactSchema` — `implications[]`, `severity`, `affected_stakeholders[]`, `estimated_impact`, `consequence_if_ignored` |
+| **Evaluation focus** | Challenge step 3 — impact analysis |
+
+### Agent 4 — ActionGeneratorAgent + ActionQualityCritic
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Ranked recommended actions + single `top_action`; critic enforces quality |
+| **Loop** | Up to **2 rounds**: generate actions → critic → if `reject` and round &lt; 2, regenerate with `improvement_instructions` |
+| **Output schemas** | `ActionSchema`, `ActionCriticSchema` |
+| **Trace** | Critic logged as `ActionQualityCritic` in `agent_trace` |
+| **Evaluation focus** | Challenge step 4 — action generation |
+
+### Agent 5 — ExecutionSimulatorAgent
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Simulate executing the top action with steps, before/after state, notification draft, projections |
+| **Validation** | `validateSimulation()` may trigger **one retry** if before/after or step count is weak |
+| **Output schema** | `SimulationSchema` — `steps[]` (with `tool_used`), `before_state`, `after_state`, notification fields, projections |
+| **Post-processing** | **Mock tool bridge** runs per step (not LLM) |
+| **Evaluation focus** | Challenge step 5 — action simulation |
+
+### Agent 6 — OutcomeReporter
+
+| Attribute | Detail |
+|-----------|--------|
+| **Purpose** | Human-readable narrative summaries for UI sections |
+| **Input** | Full pipeline context including tool invocation audit lines |
+| **Output schema** | `OutcomeReportSchema` — summaries for input, insight, impact, actions, simulation |
+| **Evaluation focus** | Challenge step 6 — outcome visualization (narrative layer) |
+
+### Non-LLM pipeline steps
+
+| Step | Module | Role |
+|------|--------|------|
+| **Outcome evidence** | `outcome-evidence.ts` | Deterministic diffs, KPI snapshots, `simulation_validation` flags |
+| **Tool bridge** | `antigravity/tool-bridge.ts` | Mock execution records per `tool_used` |
+| **Webhook dispatch** | `webhooks/dispatch-action-webhook.ts` | Real HTTP POST when configured |
+
+---
+
+## Mock vs real APIs and external services
+
+### Summary table
+
+| Service / API | Mock or real? | Used for | Configuration |
+|---------------|---------------|----------|----------------|
+| **Google Gemini** | **Real** | All agent `generateObject` calls + image vision ingestion | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| **Firebase Auth** | **Real** | User login (mobile + web) | `EXPO_PUBLIC_FIREBASE_*` / Admin SDK |
+| **Firebase Admin** | **Real** | Verify ID tokens on API routes | `FIREBASE_*` in backend `.env.local` |
+| **Cloud Firestore** | **Real** | Persist `PipelineResult` per user | Same Firebase project |
+| **Public URL fetch** | **Real** | HTML download for `source: url` | Server-side `fetch` + Cheerio |
+| **PDF parsing** | **Real** | Text extraction for `source: pdf_base64` | `pdf-parse` library |
+| **Image vision** | **Real** | Describe/OCR images → text | Gemini multimodal (`analyze-image.ts`) |
+| **Google Sheets** | **Mock** | Simulation step tool | `google_sheets_tool` in tool bridge |
+| **Gmail** | **Mock** | Simulation step tool | `gmail_tool` |
+| **Google Drive** | **Mock** | Simulation step tool | `google_drive_tool` |
+| **Web search** | **Mock** | Simulation step tool | `web_search_tool` |
+| **CRM** | **Mock** | Simulation step tool | `crm_tool` |
+| **Notifications** | **Mock** | Simulation step tool | `notification_service` |
+| **Database tool** | **Mock** | Simulation step tool | `database_tool` |
+| **Analytics tool** | **Mock** | Simulation step tool | `analytics_tool` |
+| **Outbound action webhook** | **Real (optional)** | POST compact JSON after simulation | `ACTION_WEBHOOK_URL`, `ACTION_WEBHOOK_SECRET` |
+
+### Mock tool bridge behavior
+
+For each simulation step, `executeAntigravityToolBridge()` invokes a **deterministic handler** that returns:
+
+- `latency_ms` (simulated delay)  
+- `request_digest` / `response_digest` (truncated descriptions)  
+- `audit_line` prefixed with `[MOCK]` for clear sandbox labeling  
+
+Unknown tool names are marked `skipped` with an explanatory audit line—no silent failure.
+
+### Real webhook payload (optional)
+
+When `ACTION_WEBHOOK_URL` is set (e.g. [webhook.site](https://webhook.site)), the server POSTs a **compact JSON** payload including pipeline id, ingestion preview, insight summary, simulation summary, evidence slice, and action quality summary. This is a **real HTTP integration** you can point at Zapier, Discord, or custom backends.
+
+---
+
+## Integrations implemented
+
+### 1. Google Gemini (Vercel AI SDK)
+
+- **Package:** `@ai-sdk/google`, `ai` (`generateObject`, `generateText` for vision)  
+- **Default model:** `gemini-2.5-flash` (`GEMINI_MODEL` env override)  
+- **Pattern:** Zod schema + prompt per agent; automatic JSON validation  
+- **Retries:** `generateObjectWithRetry` handles rate-limit backoffs  
+
+### 2. Firebase (Auth + Firestore)
+
+- **Client:** Mobile (`lib/firebase.ts`) and web demo use Firebase JS SDK  
+- **Server:** Firebase Admin verifies Bearer tokens; Firestore stores reports  
+- **Security:** API routes reject unauthenticated pipeline/report access  
+
+### 3. Content ingestion integrations
+
+| Mode | Integration | Implementation file |
+|------|-------------|-------------------|
+| Text | Direct string | `resolve-content.ts` |
+| URL | HTTP + HTML parse | `fetch` + Cheerio |
+| PDF | Base64 decode + parse | `pdf-parse` |
+| Image | Base64 + vision | `analyze-image.ts` → Gemini |
+
+### 4. Mobile ↔ backend
+
+- **Auth:** Firebase ID token sent as `Authorization: Bearer <token>`  
+- **Pipeline:** `POST /api/pipeline` with `stream: false` on native (JSON response)  
+- **Reports:** `GET /api/reports`, `DELETE /api/reports?id=`  
+- **Config:** `EXPO_PUBLIC_API_URL` (e.g. Railway production URL)  
+
+### 5. Google Antigravity (development + runtime parity)
+
+- **Development:** IDE used to architect and implement the repo ([ANTIGRAVITY.md](./ANTIGRAVITY.md))  
+- **Runtime:** Work plan + tool bridge + agent trace mirror Antigravity’s Manager → specialists → tools → evidence flow  
+
+### 6. Expo / EAS (mobile distribution)
+
+- **Expo SDK 54** — React Native app with Expo Router  
+- **EAS Build** — Android APK for hackathon submission (`eas.json`, preview profile)  
+- **Env baked at build:** API URL + Firebase keys in `eas.json` `env` block  
+
+---
+
+## Deployment and environments
+
+| Environment | Backend | Mobile | Notes |
+|-------------|---------|--------|-------|
+| **Local dev** | `npm run dev` → `http://localhost:3000` | Expo Go / emulator; `EXPO_PUBLIC_API_URL` = LAN IP | Backend binds `0.0.0.0` for device access |
+| **Production** | **Railway** — `https://cta-backend-production.up.railway.app` | APK via EAS Build | Team-deployed API; mobile points via `EXPO_PUBLIC_API_URL` |
+| **Web demo** | Same backend | Browser `/demo` | Requires `NEXT_PUBLIC_FIREBASE_*` on backend |
+
+### Environment variables (reference)
+
+**Backend (`backend/.env.local`):** `GOOGLE_GENERATIVE_AI_API_KEY`, `FIREBASE_*`, optional `ACTION_WEBHOOK_URL`, `GEMINI_MODEL`  
+
+**Mobile (`mobile/.env` / EAS `env`):** `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_FIREBASE_*`  
+
+Secrets must not be committed; use `.env.example` templates.
+
+### Core data model (`PipelineResult`)
+
+The pipeline returns one JSON object (SSE final event or `result` when `stream: false`). Key top-level fields:
+
+| Field | Description |
+|-------|-------------|
+| `id` | UUID for this run |
+| `ingestion` | `ContentIngestionMeta` — source type, char count, `text_preview` |
+| `antigravity` | `work_plan` + `tool_invocations[]` from mock bridge |
+| `content_understanding` … `simulation` | Outputs from agents 1–5 |
+| `action_quality` | Critic verdict, rounds, improvement instructions if any |
+| `outcome_evidence` | KPI snapshots, `diff_highlights[]`, `simulation_validation` |
+| `webhook_dispatch` | Status of optional outbound POST |
+| `outcome_report` | Narrative summaries for UI sections |
+| `agent_trace` | Ordered log of agent/critic steps with durations |
+| `total_duration_ms` | Wall-clock pipeline time |
+
+Reports are stored in Firestore under the authenticated user's collection for history and delete support via `/api/reports`.
+
+---
+
 ## How it maps to the challenge brief
 
 | Brief requirement | Implementation |
@@ -61,48 +416,6 @@ The **mobile app** drives the experience: paste text, enter a URL, pick a PDF, o
 | **6. Outcome visualization** | Before/after tables, step log, notification draft, **`outcome_evidence`** (diffs, KPIs, validation badges). |
 | **7. Agentic workflow** | SSE events; **Antigravity-style work plan** (mission, `reasoning_chain`, `planned_tasks`); `agent_trace`; critic + webhook events. |
 | **Google Antigravity** | Primary **development** platform and documented trace ([ANTIGRAVITY.md](./ANTIGRAVITY.md)); **runtime** mirrors [Google’s Antigravity narrative](https://developers.googleblog.com/build-with-google-antigravity-our-new-agentic-development-platform/) (Manager plan → specialists → tools → evidence). |
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph clients [Clients]
-    M[Expo mobile]
-    W[Next.js /demo]
-  end
-
-  subgraph backend [Next.js backend]
-    API["POST /api/pipeline"]
-    ING[resolvePipelineContent]
-    WP[Work plan Gemini]
-    A1A6[Specialist agents Gemini]
-    TB[Mock tool bridge]
-    EV[outcome_evidence builder]
-    WH[Optional webhook POST]
-    FS[(Firestore)]
-  end
-
-  M --> API
-  W --> API
-  API --> ING --> WP --> A1A6 --> TB --> EV --> WH
-  A1A6 --> FS
-```
-
-**Request path (simplified):**
-
-```
-Client (Firebase ID token)
-  → POST /api/pipeline { content, source }
-  → Auth middleware (Firebase Admin)
-  → Ingestion (text / URL / PDF / image → normalized string + ContentIngestionMeta)
-  → SSE stream opens
-  → Work plan (structured “Manager” step)
-  → Agents 1–6 + critic loop + simulation + tool bridge + outcome evidence + webhook
-  → pipeline_complete (full PipelineResult JSON)
-  → Firestore saveReport (best-effort; pipeline still succeeds if save fails)
-```
 
 ---
 
@@ -146,6 +459,7 @@ Autonomous_Content_To_Action_Agent/
 │           ├── auth.ts
 │           └── firestore.ts
 └── mobile/
+    ├── eas.json               ← EAS Build profiles + production env vars
     ├── package.json
     ├── app/                   ← Expo Router screens (tabs, auth, pipeline, report)
     └── lib/
@@ -241,7 +555,7 @@ Values come from **Firebase Console → Project settings → Your apps → Web a
 
 - **Android emulator:** often `http://10.0.2.2:3000` (or set `EXPO_PUBLIC_API_URL` explicitly)  
 - **Physical device:** Mac/PC **LAN IP** from `npx expo start` (not `localhost`)  
-- **Production:** your deployed HTTPS API origin  
+- **Production:** `https://cta-backend-production.up.railway.app` (or your deployed HTTPS API origin)  
 
 ### 3. Install and run
 
