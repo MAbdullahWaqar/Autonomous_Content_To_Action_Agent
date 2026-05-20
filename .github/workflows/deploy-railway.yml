@@ -22,7 +22,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # backboard.railway.com sometimes times out from GitHub runners — retry a few times
       - name: Deploy to Railway
-        run: railway up --service=${{ secrets.RAILWAY_SERVICE_ID }} --detach
+        run: |
+          set -e
+          for attempt in 1 2 3 4; do
+            echo "railway up attempt $attempt/4..."
+            if railway up --service=${{ secrets.RAILWAY_SERVICE_ID }} --detach; then
+              echo "Deploy started successfully."
+              exit 0
+            fi
+            echo "Deploy failed (often network timeout). Waiting 60s before retry..."
+            sleep 60
+          done
+          echo "All attempts failed."
+          exit 1
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
